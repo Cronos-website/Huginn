@@ -343,12 +343,12 @@ export function useCreateSchedule() {
 export function useUpdateSchedule() {
   const invalidate = useInvalidate(["schedules"]);
   return useMutation({
-    mutationFn: (vars: { id: string; name?: string; enabled?: boolean; cron_expression?: string }) =>
-      api.put<Schedule>(`/api/schedules/${vars.id}`, {
-        name: vars.name,
-        enabled: vars.enabled,
-        cron_expression: vars.cron_expression,
-      }),
+    // Only the provided fields are sent (the backend uses exclude_unset), so this
+    // serves both the enabled toggle and a full edit.
+    mutationFn: (vars: { id: string } & Partial<ScheduleCreate>) => {
+      const { id, ...rest } = vars;
+      return api.put<Schedule>(`/api/schedules/${id}`, rest);
+    },
     onSuccess: invalidate,
   });
 }

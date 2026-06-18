@@ -105,18 +105,23 @@ export function SchedulesPage() {
                     />
                   </td>
                   <td style={{ textAlign: "right" }}>
-                    <button
-                      className="btn btn--danger btn--sm"
-                      onClick={() => {
-                        if (!confirm(`Delete schedule "${s.name}"?`)) return;
-                        del.mutate(s.id, {
-                          onSuccess: () => toast("ok", "schedule deleted"),
-                          onError: (err: Error) => toast("err", err.message),
-                        });
-                      }}
-                    >
-                      Delete
-                    </button>
+                    <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+                      <button className="btn btn--ghost btn--sm" onClick={() => setEditing(s)}>
+                        Edit
+                      </button>
+                      <button
+                        className="btn btn--danger btn--sm"
+                        onClick={() => {
+                          if (!confirm(`Delete schedule "${s.name}"?`)) return;
+                          del.mutate(s.id, {
+                            onSuccess: () => toast("ok", "schedule deleted"),
+                            onError: (err: Error) => toast("err", err.message),
+                          });
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -126,38 +131,47 @@ export function SchedulesPage() {
       )}
 
       {editing && (
-        <ScheduleModal onClose={() => setEditing(null)} onToast={toast} />
+        <ScheduleModal
+          schedule={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onToast={toast}
+        />
       )}
     </div>
   );
 }
 
 function ScheduleModal({
+  schedule,
   onClose,
   onToast,
 }: {
+  schedule: Schedule | null;
   onClose: () => void;
   onToast: (k: "ok" | "err" | "info", m: string) => void;
 }) {
   const { data: vms } = useVms();
   const { data: tags } = useTags();
   const create = useCreateSchedule();
+  const update = useUpdateSchedule();
+  const editing = schedule !== null;
 
-  const [name, setName] = useState("");
-  const [targetKind, setTargetKind] = useState<ScheduleTargetKind>("all_active");
-  const [targetVm, setTargetVm] = useState("");
-  const [targetTag, setTargetTag] = useState("");
-  const [taskKind, setTaskKind] = useState<"action" | "command">("action");
-  const [action, setAction] = useState("status");
-  const [actionParam, setActionParam] = useState("");
-  const [command, setCommand] = useState("");
+  const [name, setName] = useState(schedule?.name ?? "");
+  const [targetKind, setTargetKind] = useState<ScheduleTargetKind>(schedule?.target_kind ?? "all_active");
+  const [targetVm, setTargetVm] = useState(schedule?.target_vm_id ?? "");
+  const [targetTag, setTargetTag] = useState(schedule?.target_tag_id ?? "");
+  const [taskKind, setTaskKind] = useState<"action" | "command">(schedule?.task_kind ?? "action");
+  const [action, setAction] = useState(schedule?.action_name ?? "status");
+  const [actionParam, setActionParam] = useState(Object.values(schedule?.params ?? {})[0] ?? "");
+  const [command, setCommand] = useState(schedule?.command ?? "");
 
-  const [preset, setPreset] = useState<Preset>("daily");
+  // Editing defaults to the raw cron (reverse-parsing into presets is lossy).
+  const [preset, setPreset] = useState<Preset>(editing ? "advanced" : "daily");
   const [hour, setHour] = useState(3);
   const [minute, setMinute] = useState(0);
   const [dow, setDow] = useState(0);
   const [dom, setDom] = useState(1);
-  const [advancedCron, setAdvancedCron] = useState("0 3 * * *");
+  const [advancedCron, setAdvancedCron] = useState(schedule?.cron_expression ?? "0 3 * * *");
 
   const spec = ACTION_CATALOG.find((a) => a.name === action);
   const cron = preset === "advanced" ? advancedCron : buildCron(preset, hour, minute, dow, dom);
@@ -165,27 +179,33 @@ function ScheduleModal({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     const params = spec?.param && actionParam ? { [spec.param.name]: actionParam } : {};
-    create.mutate(
-      {
-        name,
-        target_kind: targetKind,
-        target_vm_id: targetKind === "vm" ? targetVm : null,
-        target_tag_id: targetKind === "tag" ? targetTag : null,
-        task_kind: taskKind,
-        action_name: taskKind === "action" ? action : null,
-        params: taskKind === "action" ? params : {},
-        command: taskKind === "command" ? command : null,
-        cron_expression: cron,
-      },
-      {
-        onSuccess: () => { onToast("ok", `schedule "${name}" created`); onClose(); },
-        onError: (err: Error) => onToast("err", err.message),
-      }
-    );
+    const payload = {
+      name,
+      target_kind: targetKind,
+      target_vm_id: targetKind === "vm" ? targetVm : null,
+      target_tag_id: targetKind === "tag" ? targetTag : null,
+      task_kind: taskKind,
+      action_name: taskKind === "action" ? action : null,
+      params: taskKind === "action" ? params : {},
+      command: taskKind === "command" ? command : null,
+      cron_expression: cron,
+    };
+    const verb = editing ? "updated" : "created";
+    const opts = {
+      onSuccess: () => { onToast("ok", `schedule "${name}" ${verb}`); onClose(); },
+      onError: (err: Error) => onToast("err", err.message),
+    };
+    if (editing && schedule) {
+      update.mutate({ id: schedule.id, ...payload }, opts);
+    } else {
+      create.mutate(payload, opts);
+    }
   }
 
+  const pending = editing ? update.isPending : create.isPending;
+
   return (
-    <Modal open onClose={onClose} title="New schedule" width={560}>
+    <Modal open onClose={onClose} title={editing ? "Edit schedule" : "New schedule"} width={560}>
       <form onSubmit={submit} className="stack" style={{ gap: 16 }}>
         <div>
           <label className="lbl">Name</label>
@@ -291,8 +311,8 @@ function ScheduleModal({
 
         <div className="spread" style={{ marginTop: 8 }}>
           <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn btn--primary" disabled={create.isPending}>
-            {create.isPending ? <span className="spin" /> : "Create schedule"}
+          <button type="submit" className="btn btn--primary" disabled={pending}>
+            {pending ? <span className="spin" /> : editing ? "Save changes" : "Create schedule"}
           </button>
         </div>
       </form>

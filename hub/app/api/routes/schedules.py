@@ -69,7 +69,9 @@ async def update_schedule(
     sched = await schedules_service.get(session, schedule_id)
     if sched is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "schedule not found")
-    sched = await schedules_service.update(session, sched, body.model_dump(exclude_none=True))
+    # exclude_unset so a PATCH-like edit only touches the fields the client sent
+    # (and can explicitly clear target ids by sending null when switching kind).
+    sched = await schedules_service.update(session, sched, body.model_dump(exclude_unset=True))
     await record(
         session,
         actor_type=principal.actor_type,
