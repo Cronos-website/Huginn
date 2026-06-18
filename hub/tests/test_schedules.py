@@ -74,6 +74,20 @@ async def test_run_due_creates_tasks_for_all_active(session) -> None:
     assert created == 1
     assert sched.last_run_at is not None
 
+    # The trigger is recorded in the audit log (filterable, actor = schedule name).
+    from sqlalchemy import select
+
+    from app.models.audit import AuditLog
+
+    rows = (
+        await session.execute(
+            select(AuditLog).where(AuditLog.event_type == "scheduled_action")
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].actor_id == "uptime"
+    assert rows[0].detail["schedule_id"] == str(sched.id)
+
     # Immediately re-running should not fire again (last_run_at just updated).
     again = await schedules_service.run_due(session)
     assert again == 0

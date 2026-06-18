@@ -15,6 +15,8 @@ const EVENT_TYPES = [
   "revoke",
   "execute_action",
   "execute_command",
+  "scheduled_action",
+  "scheduled_command",
   "toggle_unrestricted",
   "trigger_update",
   "token_create",

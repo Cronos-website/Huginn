@@ -10,8 +10,9 @@ from croniter import croniter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import audit
 from app.core.actions import validate_action
-from app.models.enums import VMState
+from app.models.enums import ActorType, VMState
 from app.models.mixins import as_aware_utc, utcnow
 from app.models.scheduled_command import ScheduledCommand
 from app.models.vm import VM
@@ -98,20 +99,43 @@ async def run_due(session: AsyncSession) -> int:
             for vm in targets:
                 try:
                     if sched.task_kind == "action":
-                        await tasks_service.create_action_task(
+                        task = await tasks_service.create_action_task(
                             session,
                             vm=vm,
                             action_name=sched.action_name or "",
                             params=dict(sched.params or {}),
                             created_by=f"schedule:{sched.id}",
                         )
+                        event_type, action_name, command = (
+                            "scheduled_action",
+                            sched.action_name,
+                            None,
+                        )
                     else:
-                        await tasks_service.create_command_task(
+                        task = await tasks_service.create_command_task(
                             session,
                             vm=vm,
                             command=sched.command or "",
                             created_by=f"schedule:{sched.id}",
                         )
+                        event_type, action_name, command = (
+                            "scheduled_command",
+                            None,
+                            sched.command,
+                        )
+                    # Record the trigger in the audit log so scheduled runs are
+                    # visible/filterable. actor_id = schedule name (shown verbatim
+                    # for system events); the id lives in detail for traceability.
+                    await audit.record(
+                        session,
+                        actor_type=ActorType.system,
+                        actor_id=sched.name,
+                        event_type=event_type,
+                        vm_id=vm.id,
+                        action_name=action_name,
+                        command=command,
+                        detail={"schedule_id": str(sched.id), "task_id": str(task.id)},
+                    )
                     created += 1
                 except Exception as exc:  # noqa: BLE001 - skip this VM, keep going
                     logger.warning("schedule %s: vm %s failed: %s", sched.id, vm.id, exc)
