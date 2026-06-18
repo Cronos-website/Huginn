@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApproveVm, useBulkRunAction, useSettings, useTags, useVms } from "../api/hooks";
 import { useAuth } from "../auth/AuthContext";
+import { AddVmModal } from "../components/AddVmModal";
 import { ModeBadge, StateBadge, TagBadge } from "../components/badges";
 import { useToast } from "../components/Toast";
 import { timeAgo, shortId } from "../lib/format";
@@ -36,6 +37,7 @@ export function FleetPage() {
   const [bulkAction, setBulkAction] = useState("status");
   const [bulkParam, setBulkParam] = useState("");
   const [filterTags, setFilterTags] = useState<Set<string>>(new Set());
+  const [addOpen, setAddOpen] = useState(false);
 
   // Apply the tag filter client-side.
   const vms = (allVms ?? []).filter(
@@ -96,8 +98,17 @@ export function FleetPage() {
             Fleet
           </h1>
         </div>
-        <div className="muted tiny">target worker · {settings?.target_worker_version ?? "…"}</div>
+        <div className="row" style={{ gap: 14 }}>
+          <div className="muted tiny">target worker · {settings?.target_worker_version ?? "…"}</div>
+          {isAdmin && (
+            <button className="btn btn--primary btn--sm" onClick={() => setAddOpen(true)}>
+              + Add VM
+            </button>
+          )}
+        </div>
       </div>
+
+      {isAdmin && <AddVmModal open={addOpen} onClose={() => setAddOpen(false)} />}
 
       {/* Tag filter */}
       {tags && tags.length > 0 && (

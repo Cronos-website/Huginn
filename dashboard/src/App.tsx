@@ -5,7 +5,6 @@ import { Layout } from "./components/Layout";
 import { LoginPage } from "./pages/LoginPage";
 import { FleetPage } from "./pages/FleetPage";
 import { VMDetailPage } from "./pages/VMDetailPage";
-import { TokensPage } from "./pages/TokensPage";
 import { AuditPage } from "./pages/AuditPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { UsersPage } from "./pages/UsersPage";
@@ -43,7 +42,6 @@ export function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/fleet" element={<FleetPage />} />
         <Route path="/vm/:id" element={<VMDetailPage />} />
-        <Route path="/tokens" element={<TokensPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/users" element={<UsersPage />} />
