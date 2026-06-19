@@ -26,13 +26,24 @@ import httpx
 from mcp.server.fastmcp import FastMCP
 
 from app.config import get_settings
-from app.context import current_obo_token
+from app.context import current_client_ip, current_obo_token
 from app.hub_client import HubClient, HubError
 
 logger = logging.getLogger("huginn.mcp")
 
 settings = get_settings()
-mcp = FastMCP("Huginn", host=settings.host, port=settings.port)
+# Stateless HTTP: each request is handled in its own task started from the
+# request context, so the per-request on-behalf-of token (set by BearerAuthASGI)
+# reliably reaches the tool's hub call. A long-lived session task would instead
+# capture the token from session-creation time and reuse it for every later
+# request — attributing all calls to whoever opened the session.
+mcp = FastMCP(
+    "Huginn",
+    host=settings.host,
+    port=settings.port,
+    stateless_http=True,
+    json_response=True,
+)
 hub = HubClient(settings)
 
 
@@ -48,6 +59,9 @@ class TokenValidator:
     re-validates on every actual tool call, so this is just a connect-time gate.
     """
 
+    # Cap so a flood of distinct bogus bearers can't grow the cache unbounded.
+    _MAX_ENTRIES = 1024
+
     def __init__(self, ttl: float = 30.0) -> None:
         self._ttl = ttl
         self._cache: dict[str, tuple[bool, float]] = {}
@@ -60,6 +74,8 @@ class TokenValidator:
         if cached is not None and (now - cached[1]) < self._ttl:
             return cached[0]
         ok = await self._check(presented)
+        if len(self._cache) >= self._MAX_ENTRIES:
+            self._cache.clear()  # cheap bound; entries are short-lived anyway
         self._cache[presented] = (ok, now)
         return ok
 
@@ -77,6 +93,18 @@ class TokenValidator:
         except Exception:  # noqa: BLE001 - hub unreachable → deny
             logger.warning("could not validate MCP token against hub")
             return False
+
+
+def _client_ip(scope: dict, headers: dict) -> str | None:
+    """Originating client IP: the first X-Forwarded-For hop (set by Caddy), else
+    the direct peer."""
+    xff = headers.get(b"x-forwarded-for", b"").decode()
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    client = scope.get("client")
+    return client[0] if client else None
 
 
 class BearerAuthASGI:
@@ -98,10 +126,12 @@ class BearerAuthASGI:
             presented = auth[7:] if auth.startswith("Bearer ") else ""
             if await self._validator.valid(presented):
                 ctx_token = current_obo_token.set(presented)
+                ctx_ip = current_client_ip.set(_client_ip(scope, headers))
                 try:
                     await self._app(scope, receive, send)
                 finally:
                     current_obo_token.reset(ctx_token)
+                    current_client_ip.reset(ctx_ip)
                 return
             # Reject with 401
             await send({

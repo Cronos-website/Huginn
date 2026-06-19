@@ -41,10 +41,13 @@ class Principal:
     def can_execute(self) -> bool:
         """Operator capability: run actions/commands, trigger updates, read audit.
 
-        Granted to operators/admins (human or via MCP) and to the trusted
-        service-token agent, but NOT to read-only users.
+        Granted to operators/admins (human or via an on-behalf-of MCP token) and
+        to the anonymous service-token agent — but NOT to read-only users, even
+        through MCP (an MCP token never grants more than its owner's real role).
         """
-        return self.actor_type is ActorType.agent or self.is_operator
+        if self.actor_type is ActorType.agent and self.user is None:
+            return True  # anonymous service-token agent
+        return self.is_operator
 
     @classmethod
     def from_user(cls, user: User) -> Principal:

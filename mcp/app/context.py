@@ -10,3 +10,10 @@ import contextvars
 current_obo_token: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_obo_token", default=None
 )
+
+# The originating client IP for the current request (the agent that called the
+# MCP server), forwarded to the hub so the audit log shows the real source IP
+# instead of the MCP container.
+current_client_ip: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_client_ip", default=None
+)

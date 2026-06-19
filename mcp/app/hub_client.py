@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
-from app.context import current_obo_token
+from app.context import current_client_ip, current_obo_token
 
 
 class HubError(Exception):
@@ -36,11 +36,17 @@ class HubClient:
         await self._client.aclose()
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        # Forward the current request's end-user identity so the hub attributes
-        # the action to that user (the service token alone is just MCP-server trust).
+        # Forward the current request's end-user identity (so the hub attributes
+        # the action to that user) and the originating client IP (so the audit
+        # shows the real source, not the MCP container).
+        headers: dict[str, str] = {}
         obo = current_obo_token.get()
-        headers = {"X-MCP-On-Behalf-Of": obo} if obo else None
-        resp = await self._client.request(method, path, headers=headers, **kwargs)
+        if obo:
+            headers["X-MCP-On-Behalf-Of"] = obo
+        ip = current_client_ip.get()
+        if ip:
+            headers["X-Forwarded-For"] = ip
+        resp = await self._client.request(method, path, headers=headers or None, **kwargs)
         if resp.status_code >= 400:
             detail = resp.text
             try:

@@ -72,6 +72,20 @@ async def test_mcp_action_attributed_to_user_in_audit(
     assert audit and audit[0]["actor_label"] == "mcp · admin"
 
 
+async def test_readonly_token_cannot_execute(
+    client, readonly_headers, enrolled_worker
+) -> None:
+    # A readonly user's MCP token must NOT gain operator capability via MCP.
+    w = await enrolled_worker()
+    token = (await _make_token(client, readonly_headers))["token"]
+    obo = {**_svc(), "X-MCP-On-Behalf-Of": token}
+    r = await client.post(f"/api/vms/{w['vm_id']}/actions", json={"action": "status"}, headers=obo)
+    assert r.status_code == 403
+    # ...but it can still read (whoami resolves the readonly user).
+    who = await client.get("/api/mcp/whoami", headers=obo)
+    assert who.json()["role"] == "readonly"
+
+
 async def test_cannot_revoke_another_users_token(client, admin_headers, make_user) -> None:
     tok = await _make_token(client, admin_headers)
     _, pw = await make_user(username="bob", password="bob-password-1234", role=UserRole.operator)

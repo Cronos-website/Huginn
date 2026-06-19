@@ -10,6 +10,7 @@ const TTL_OPTIONS = [
   { label: "12 hours", value: 43200 },
   { label: "7 days", value: 604800 },
   { label: "30 days", value: 2592000 },
+  { label: "Never", value: 0 },
 ];
 
 const mask = (t: string) => (t.length > 8 ? `****${t.slice(-8)}` : "****");
