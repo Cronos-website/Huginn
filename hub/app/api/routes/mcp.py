@@ -11,15 +11,18 @@ from app.api.deps import client_ip, get_principal
 from app.core import audit
 from app.core.principal import Principal
 from app.db import get_session
+from app.models.user import User
 from app.schemas.mcp import McpTokenCreate, McpTokenCreated, McpTokenOut, WhoAmI
 from app.services import mcp_tokens as mcp_tokens_service
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
 
-def _require_user(principal: Principal) -> None:
+def _require_user(principal: Principal) -> User:
+    """The user behind the request (direct session or on-behalf-of MCP token)."""
     if principal.user is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "a user session is required")
+    return principal.user
 
 
 @router.get("/tokens", response_model=list[McpTokenOut])
@@ -27,9 +30,8 @@ async def list_tokens(
     principal: Principal = Depends(get_principal),
     session: AsyncSession = Depends(get_session),
 ) -> list[McpTokenOut]:
-    _require_user(principal)
-    assert principal.user is not None
-    return await mcp_tokens_service.list_for_user(session, principal.user.id)  # type: ignore[return-value]
+    user = _require_user(principal)
+    return await mcp_tokens_service.list_for_user(session, user.id)  # type: ignore[return-value]
 
 
 @router.post("/tokens", response_model=McpTokenCreated, status_code=status.HTTP_201_CREATED)
@@ -39,9 +41,8 @@ async def create_token(
     principal: Principal = Depends(get_principal),
     session: AsyncSession = Depends(get_session),
 ) -> McpTokenCreated:
-    _require_user(principal)
-    assert principal.user is not None
-    token, plaintext = await mcp_tokens_service.create(session, principal.user, body.name)
+    user = _require_user(principal)
+    token, plaintext = await mcp_tokens_service.create(session, user, body.name)
     await audit.record(
         session,
         actor_type=principal.actor_type,
@@ -61,9 +62,8 @@ async def revoke_token(
     principal: Principal = Depends(get_principal),
     session: AsyncSession = Depends(get_session),
 ) -> None:
-    _require_user(principal)
-    assert principal.user is not None
-    if not await mcp_tokens_service.revoke(session, token_id, principal.user.id):
+    user = _require_user(principal)
+    if not await mcp_tokens_service.revoke(session, token_id, user.id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "token not found")
     await audit.record(
         session,
