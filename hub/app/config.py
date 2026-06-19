@@ -72,9 +72,6 @@ class Settings(BaseSettings):
     bootstrap_admin_username: str = "admin"
     bootstrap_admin_password: str | None = None
 
-    # MCP client token (for agent → MCP HTTP auth). Seeded into DB on first boot.
-    mcp_client_token: str = ""
-
     # OIDC / Authentik
     oidc_enabled: bool = False
     # Label shown on the login button ("Continue with <name>").

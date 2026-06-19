@@ -10,7 +10,8 @@ import type {
   EnrollmentToken,
   EnrollmentTokenCreated,
   ExecMode,
-  McpTokenResponse,
+  McpToken,
+  McpTokenCreated,
   PasswordChange,
   Schedule,
   ScheduleCreate,
@@ -94,10 +95,10 @@ export function useUsers() {
   });
 }
 
-export function useMcpToken() {
+export function useMcpTokens() {
   return useQuery({
-    queryKey: ["mcp-token"],
-    queryFn: () => api.get<McpTokenResponse>("/api/settings/mcp-token"),
+    queryKey: ["mcp-tokens"],
+    queryFn: () => api.get<McpToken[]>("/api/mcp/tokens"),
   });
 }
 
@@ -269,12 +270,21 @@ export function useSetUserVms() {
   });
 }
 
-// --- MCP Token ---
+// --- MCP Tokens (per-user) ---
 
-export function useRegenerateMcpToken() {
-  const invalidate = useInvalidate(["mcp-token"]);
+export function useCreateMcpToken() {
+  const invalidate = useInvalidate(["mcp-tokens"]);
   return useMutation({
-    mutationFn: () => api.put<McpTokenResponse>("/api/settings/mcp-token"),
+    mutationFn: (vars: { name: string }) =>
+      api.post<McpTokenCreated>("/api/mcp/tokens", vars),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRevokeMcpToken() {
+  const invalidate = useInvalidate(["mcp-tokens"]);
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/api/mcp/tokens/${id}`),
     onSuccess: invalidate,
   });
 }

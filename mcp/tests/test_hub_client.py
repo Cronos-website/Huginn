@@ -98,3 +98,38 @@ async def test_audit_log_passes_filters() -> None:
         assert request.url.params["limit"] == "50"
     finally:
         await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_request_forwards_on_behalf_of_token() -> None:
+    """When a request runs in a context with an OBO token, it's forwarded."""
+    from app.context import current_obo_token
+
+    route = respx.get("http://hub.test/api/vms").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    client = HubClient(_settings())
+    tok = current_obo_token.set("user-token-abc")
+    try:
+        await client.list_vms()
+        req = route.calls.last.request
+        assert req.headers["X-MCP-On-Behalf-Of"] == "user-token-abc"
+        assert req.headers["X-MCP-Service-Token"] == "test-token"
+    finally:
+        current_obo_token.reset(tok)
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_request_omits_obo_when_absent() -> None:
+    route = respx.get("http://hub.test/api/vms").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    client = HubClient(_settings())
+    try:
+        await client.list_vms()
+        assert "X-MCP-On-Behalf-Of" not in route.calls.last.request.headers
+    finally:
+        await client.aclose()

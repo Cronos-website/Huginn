@@ -10,22 +10,23 @@ Run with stdio (default) or as a remote streamable-HTTP server:
     python -m app.server                 # stdio
     HUGINN_MCP_TRANSPORT=streamable-http python -m app.server
 
-When using streamable-http, set ``HUGINN_MCP_MCP_CLIENT_TOKEN`` to require
-``Authorization: Bearer <token>`` on every incoming request. Without it the
-HTTP endpoint is open to anyone who can reach it.
+When using streamable-http, each agent authenticates with a **per-user MCP
+token** (``Authorization: Bearer <token>``). The server validates it against the
+hub and forwards the user identity, so every action is attributed to that user.
 """
 
 from __future__ import annotations
 
-import asyncio
-import hmac
 import json
 import logging
+import time
 from typing import Any
 
+import httpx
 from mcp.server.fastmcp import FastMCP
 
-from app.config import _fetch_client_token_from_hub, get_settings
+from app.config import get_settings
+from app.context import current_obo_token
 from app.hub_client import HubClient, HubError
 
 logger = logging.getLogger("huginn.mcp")
@@ -40,48 +41,50 @@ hub = HubClient(settings)
 # ---------------------------------------------------------------------------
 
 class TokenValidator:
-    """Validates bearer tokens against the live hub token (DB-backed).
+    """Validates a presented per-user MCP token against the hub.
 
-    The hub is the source of truth for the client token, so regenerating it from
-    the dashboard takes effect without restarting the MCP server. The current
-    value is cached for ``ttl`` seconds; on a mismatch the cache is refreshed
-    once and the token re-checked, so a freshly-rotated token works immediately.
+    Calls the hub's ``/api/mcp/whoami`` (authenticated with the service token +
+    the presented token as on-behalf-of). Results are cached briefly; the hub
+    re-validates on every actual tool call, so this is just a connect-time gate.
     """
 
-    def __init__(self, initial: str, ttl: float = 30.0) -> None:
-        self._token = initial
+    def __init__(self, ttl: float = 30.0) -> None:
         self._ttl = ttl
-        self._fetched_at = 0.0
-
-    async def _refresh(self, force: bool = False) -> None:
-        import time
-
-        if not force and (time.monotonic() - self._fetched_at) < self._ttl:
-            return
-        latest = await asyncio.to_thread(
-            _fetch_client_token_from_hub, settings.hub_url, settings.service_token
-        )
-        if latest:
-            self._token = latest
-        self._fetched_at = time.monotonic()
+        self._cache: dict[str, tuple[bool, float]] = {}
 
     async def valid(self, presented: str) -> bool:
         if not presented:
             return False
-        await self._refresh()
-        if self._token and hmac.compare_digest(presented, self._token):
-            return True
-        # Token may have just been rotated — force one refresh and re-check.
-        await self._refresh(force=True)
-        return bool(self._token) and hmac.compare_digest(presented, self._token)
+        now = time.monotonic()
+        cached = self._cache.get(presented)
+        if cached is not None and (now - cached[1]) < self._ttl:
+            return cached[0]
+        ok = await self._check(presented)
+        self._cache[presented] = (ok, now)
+        return ok
+
+    async def _check(self, presented: str) -> bool:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{settings.hub_url.rstrip('/')}/api/mcp/whoami",
+                    headers={
+                        "X-MCP-Service-Token": settings.service_token,
+                        "X-MCP-On-Behalf-Of": presented,
+                    },
+                )
+            return resp.status_code == 200
+        except Exception:  # noqa: BLE001 - hub unreachable → deny
+            logger.warning("could not validate MCP token against hub")
+            return False
 
 
 class BearerAuthASGI:
-    """Pure ASGI middleware: reject requests without a valid Bearer token.
+    """Pure ASGI middleware: require a valid per-user Bearer token.
 
-    Checks every HTTP request for ``Authorization: Bearer <token>`` before
-    passing it to the inner app. Returns 401 for missing or wrong tokens.
-    WebSocket connections are rejected unconditionally.
+    Validates ``Authorization: Bearer <token>`` against the hub, stashes the
+    token in the request context (so HubClient forwards it as on-behalf-of), then
+    passes the request to the inner app. 401 for missing/invalid tokens.
     """
 
     def __init__(self, app: Any, validator: TokenValidator) -> None:  # noqa: ANN401
@@ -94,7 +97,11 @@ class BearerAuthASGI:
             auth = headers.get(b"authorization", b"").decode()
             presented = auth[7:] if auth.startswith("Bearer ") else ""
             if await self._validator.valid(presented):
-                await self._app(scope, receive, send)
+                ctx_token = current_obo_token.set(presented)
+                try:
+                    await self._app(scope, receive, send)
+                finally:
+                    current_obo_token.reset(ctx_token)
                 return
             # Reject with 401
             await send({
@@ -183,32 +190,11 @@ async def get_audit_log(
 
 def main() -> None:
     if settings.transport == "streamable-http":
-        import time
-
-        # The hub generates/holds the client token. On a cold start the hub may
-        # not be ready yet, so retry the fetch before giving up (fail-closed).
-        token = settings.mcp_client_token
-        if not token:
-            for attempt in range(30):
-                token = _fetch_client_token_from_hub(
-                    settings.hub_url, settings.service_token
-                )
-                if token:
-                    break
-                logger.info("waiting for hub to provide MCP client token (%d)...", attempt + 1)
-                time.sleep(2)
-        if not token:
-            raise SystemExit(
-                "refusing to start streamable-http without a client token — "
-                "hub unreachable or has no token after retries"
-            )
-
         import uvicorn
 
         raw_app = mcp.streamable_http_app()
-        validator = TokenValidator(token)
-        app = BearerAuthASGI(raw_app, validator)
-        logger.info("HTTP bearer-token auth enabled (token validated against hub)")
+        app = BearerAuthASGI(raw_app, TokenValidator())
+        logger.info("per-user MCP token auth enabled (validated against hub)")
 
         uvicorn.run(
             app,

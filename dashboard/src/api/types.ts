@@ -194,9 +194,17 @@ export interface WebAuthnCredentialOut {
   transports: string[] | null;
 }
 
-export interface McpTokenResponse {
-  token: string;
-  masked: string;
+export interface McpToken {
+  id: string;
+  name: string;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+export interface McpTokenCreated {
+  id: string;
+  name: string;
+  token: string; // plaintext, shown once
 }
 
 export interface ActionSpec {

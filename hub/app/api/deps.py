@@ -19,6 +19,7 @@ from app.models.enums import ActorType, VMState
 from app.models.user import User
 from app.models.user_vm_access import UserVMAccess
 from app.models.vm import VM
+from app.services import mcp_tokens as mcp_tokens_service
 from app.services import users as users_service
 
 # auto_error=False so we can fall back to the MCP service-token scheme.
@@ -53,11 +54,17 @@ async def get_principal(
     settings: Settings = Depends(get_settings),
 ) -> Principal:
     """Authenticate the caller as a user (JWT) or the MCP agent (service token)."""
-    # MCP façade: timing-safe service-token check.
+    # MCP façade: timing-safe service-token check, then optional on-behalf-of user.
     if mcp_service_token is not None:
-        if security.constant_time_equals(mcp_service_token, settings.mcp_service_token):
-            return Principal.agent()
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid service token")
+        if not security.constant_time_equals(mcp_service_token, settings.mcp_service_token):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid service token")
+        obo = request.headers.get("x-mcp-on-behalf-of")
+        if obo:
+            obo_user = await mcp_tokens_service.resolve(session, obo)
+            if obo_user is None:
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid MCP token")
+            return Principal.agent(user=obo_user)
+        return Principal.agent()
 
     if credentials is None:
         raise HTTPException(
@@ -101,10 +108,11 @@ async def principal_can_access_vm(
 ) -> bool:
     """True if the principal may access the given VM.
 
-    Admins and the MCP agent always can; operators/readonly need an entry in
-    ``user_vm_access``.
+    Admins and the anonymous service-token agent always can; everyone else
+    (operators/readonly, including via an on-behalf-of MCP token) needs an entry
+    in ``user_vm_access``.
     """
-    if principal.is_admin or principal.actor_type is ActorType.agent:
+    if principal.is_admin or (principal.actor_type is ActorType.agent and principal.user is None):
         return True
     if principal.user is None:
         return False
@@ -120,8 +128,8 @@ async def principal_can_access_vm(
 async def accessible_vm_ids(
     session: AsyncSession, principal: Principal
 ) -> list[uuid.UUID] | None:
-    """VM ids the principal may see, or None when unrestricted (admin/agent)."""
-    if principal.is_admin or principal.actor_type is ActorType.agent:
+    """VM ids the principal may see, or None when unrestricted (admin / anon agent)."""
+    if principal.is_admin or (principal.actor_type is ActorType.agent and principal.user is None):
         return None
     if principal.user is None:
         return []

@@ -23,7 +23,9 @@ router = APIRouter(prefix="/api/audit", tags=["audit"])
 def _label_for(row: AuditLog, usernames: dict[str, str]) -> str:
     """Human-friendly actor label for an audit row."""
     if row.actor_type is ActorType.agent:
-        return "mcp"
+        # MCP on-behalf-of: actor_id is the user's UUID → "mcp · <username>".
+        username = usernames.get(row.actor_id)
+        return f"mcp · {username}" if username else "mcp"
     if row.actor_type is ActorType.user:
         return usernames.get(row.actor_id, row.actor_id)
     # system events: login_failed records the attempted username as actor_id.
@@ -46,10 +48,12 @@ async def list_audit(
     result = await session.execute(stmt)
     rows = list(result.scalars())
 
-    # Resolve user actor_ids to usernames in one query (UUID strings only).
+    # Resolve user actor_ids to usernames in one query. Agent rows whose actor_id
+    # is a UUID are MCP-on-behalf-of actions — resolve those too (so the label can
+    # show "mcp · <username>").
     user_ids: set[uuid.UUID] = set()
     for r in rows:
-        if r.actor_type is ActorType.user:
+        if r.actor_type in (ActorType.user, ActorType.agent):
             try:
                 user_ids.add(uuid.UUID(r.actor_id))
             except ValueError:

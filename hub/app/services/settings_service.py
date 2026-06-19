@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings as AppSettings
@@ -15,12 +13,7 @@ async def get_settings_row(session: AsyncSession) -> Setting | None:
 
 
 async def ensure_settings(session: AsyncSession, app_settings: AppSettings) -> Setting:
-    """Seed the settings row on first boot; return it.
-
-    The MCP client token comes from the env var if set, otherwise the hub
-    generates a random one — so operators never have to provision it manually.
-    The MCP server fetches whatever value the hub holds.
-    """
+    """Seed the settings row on first boot; return it."""
     row = await get_settings_row(session)
     if row is None:
         row = Setting(
@@ -28,7 +21,6 @@ async def ensure_settings(session: AsyncSession, app_settings: AppSettings) -> S
             target_worker_version=app_settings.target_worker_version,
             target_release_repo=app_settings.target_release_repo,
             allowed_release_domains=list(app_settings.allowed_release_domains),
-            mcp_client_token=app_settings.mcp_client_token or secrets.token_hex(32),
             # MFA / WebAuthn
             require_admin_mfa=app_settings.require_admin_mfa,
             allow_password_login=app_settings.allow_password_login,
@@ -45,9 +37,5 @@ async def ensure_settings(session: AsyncSession, app_settings: AppSettings) -> S
             oidc_post_login_redirect=app_settings.oidc_post_login_redirect,
         )
         session.add(row)
-        await session.flush()
-    elif not row.mcp_client_token:
-        # Backfill: prefer the env value, else generate one.
-        row.mcp_client_token = app_settings.mcp_client_token or secrets.token_hex(32)
         await session.flush()
     return row

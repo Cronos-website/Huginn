@@ -11,6 +11,7 @@ from app.models.enums import (
     VMState,
     WorkerArch,
 )
+from app.models.mcp_token import McpToken
 from app.models.mfa_backup_code import MfaBackupCode
 from app.models.scheduled_command import ScheduledCommand
 from app.models.setting import Setting
@@ -27,6 +28,7 @@ __all__ = [
     "AuditLog",
     "EnrollmentToken",
     "ExecMode",
+    "McpToken",
     "MfaBackupCode",
     "ScheduledCommand",
     "Setting",

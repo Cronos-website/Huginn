@@ -54,7 +54,7 @@ function Telemetry() {
 const NAV = [
   { to: "/", label: "Home" },
   { to: "/fleet", label: "Fleet" },
-  { to: "/access-tokens", label: "MCP Token" },
+  { to: "/access-tokens", label: "MCP Tokens" },
   { to: "/schedules", label: "Schedules", admin: true },
   { to: "/tags", label: "Tags", admin: true },
   { to: "/audit", label: "Logs" },

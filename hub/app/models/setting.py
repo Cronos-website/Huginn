@@ -27,7 +27,6 @@ class Setting(Base):
     allowed_release_domains: Mapped[list[str]] = mapped_column(
         JSONType, default=list, nullable=False
     )
-    mcp_client_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # MFA / WebAuthn (admin-configurable from dashboard)
     require_admin_mfa: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

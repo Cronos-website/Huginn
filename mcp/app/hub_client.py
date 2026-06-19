@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.context import current_obo_token
 
 
 class HubError(Exception):
@@ -35,7 +36,11 @@ class HubClient:
         await self._client.aclose()
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        resp = await self._client.request(method, path, **kwargs)
+        # Forward the current request's end-user identity so the hub attributes
+        # the action to that user (the service token alone is just MCP-server trust).
+        obo = current_obo_token.get()
+        headers = {"X-MCP-On-Behalf-Of": obo} if obo else None
+        resp = await self._client.request(method, path, headers=headers, **kwargs)
         if resp.status_code >= 400:
             detail = resp.text
             try:
