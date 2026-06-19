@@ -64,30 +64,36 @@ class TokenValidator:
 
     def __init__(self, ttl: float = 30.0) -> None:
         self._ttl = ttl
-        self._cache: dict[str, tuple[bool, float]] = {}
+        self._cache: dict[tuple[str, str], tuple[bool, float]] = {}
 
-    async def valid(self, presented: str) -> bool:
+    async def valid(self, presented: str, client_ip: str | None) -> bool:
         if not presented:
             return False
         now = time.monotonic()
-        cached = self._cache.get(presented)
+        # Cache per (token, ip) so the IP allow-list is honoured at the gate too.
+        key = (presented, client_ip or "")
+        cached = self._cache.get(key)
         if cached is not None and (now - cached[1]) < self._ttl:
             return cached[0]
-        ok = await self._check(presented)
+        ok = await self._check(presented, client_ip)
         if len(self._cache) >= self._MAX_ENTRIES:
             self._cache.clear()  # cheap bound; entries are short-lived anyway
-        self._cache[presented] = (ok, now)
+        self._cache[key] = (ok, now)
         return ok
 
-    async def _check(self, presented: str) -> bool:
+    async def _check(self, presented: str, client_ip: str | None) -> bool:
+        headers = {
+            "X-MCP-Service-Token": settings.service_token,
+            "X-MCP-On-Behalf-Of": presented,
+        }
+        if client_ip:
+            # Forward the (trusted) client IP so the hub enforces the token's IP
+            # allow-list already at the connect-time gate, not just per tool call.
+            headers["X-Forwarded-For"] = client_ip
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
-                    f"{settings.hub_url.rstrip('/')}/api/mcp/whoami",
-                    headers={
-                        "X-MCP-Service-Token": settings.service_token,
-                        "X-MCP-On-Behalf-Of": presented,
-                    },
+                    f"{settings.hub_url.rstrip('/')}/api/mcp/whoami", headers=headers
                 )
             return resp.status_code == 200
         except Exception:  # noqa: BLE001 - hub unreachable → deny
@@ -96,8 +102,12 @@ class TokenValidator:
 
 
 def _client_ip(scope: dict, headers: dict) -> str | None:
-    """Originating client IP: the first X-Forwarded-For hop (set by Caddy), else
-    the direct peer."""
+    """Originating client IP. Prefer ``X-Real-IP`` (stamped by the trusted edge
+    proxy and not forwardable by the client), then the first X-Forwarded-For hop,
+    then the direct peer."""
+    real = headers.get(b"x-real-ip", b"").decode().strip()
+    if real:
+        return real
     xff = headers.get(b"x-forwarded-for", b"").decode()
     if xff:
         first = xff.split(",")[0].strip()
@@ -124,9 +134,10 @@ class BearerAuthASGI:
             headers = dict(scope.get("headers", []))
             auth = headers.get(b"authorization", b"").decode()
             presented = auth[7:] if auth.startswith("Bearer ") else ""
-            if await self._validator.valid(presented):
+            ip = _client_ip(scope, headers)
+            if await self._validator.valid(presented, ip):
                 ctx_token = current_obo_token.set(presented)
-                ctx_ip = current_client_ip.set(_client_ip(scope, headers))
+                ctx_ip = current_client_ip.set(ip)
                 try:
                     await self._app(scope, receive, send)
                 finally:

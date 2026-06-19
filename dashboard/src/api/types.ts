@@ -197,6 +197,7 @@ export interface WebAuthnCredentialOut {
 export interface McpToken {
   id: string;
   name: string;
+  allowed_ip: string | null;
   created_at: string;
   last_used_at: string | null;
 }
@@ -204,6 +205,7 @@ export interface McpToken {
 export interface McpTokenCreated {
   id: string;
   name: string;
+  allowed_ip: string | null;
   token: string; // plaintext, shown once
 }
 

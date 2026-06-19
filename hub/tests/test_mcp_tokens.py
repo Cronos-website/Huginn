@@ -86,6 +86,61 @@ async def test_readonly_token_cannot_execute(
     assert who.json()["role"] == "readonly"
 
 
+async def test_token_ip_binding_enforced(client, admin_headers) -> None:
+    r = await client.post(
+        "/api/mcp/tokens",
+        json={"name": "pinned", "allowed_ip": "203.0.113.7"},
+        headers=admin_headers,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["allowed_ip"] == "203.0.113.7/32"
+    token = r.json()["token"]
+    obo = {**_svc(), "X-MCP-On-Behalf-Of": token}
+
+    # Right IP → allowed.
+    ok = await client.get("/api/mcp/whoami", headers={**obo, "X-Forwarded-For": "203.0.113.7"})
+    assert ok.status_code == 200
+    # Wrong IP → blocked.
+    bad = await client.get("/api/mcp/whoami", headers={**obo, "X-Forwarded-For": "198.51.100.9"})
+    assert bad.status_code == 401
+    # No IP at all → blocked (restriction set).
+    none = await client.get("/api/mcp/whoami", headers=obo)
+    assert none.status_code == 401
+
+
+async def test_token_ip_binding_cidr_and_editable(client, admin_headers) -> None:
+    tok = await _make_token(client, admin_headers)
+    obo = {**_svc(), "X-MCP-On-Behalf-Of": tok["token"]}
+    # No restriction yet → any IP works.
+    r = await client.get("/api/mcp/whoami", headers={**obo, "X-Forwarded-For": "1.2.3.4"})
+    assert r.status_code == 200
+
+    # Restrict to a subnet via PATCH.
+    upd = await client.patch(
+        f"/api/mcp/tokens/{tok['id']}", json={"allowed_ip": "10.0.0.0/24"}, headers=admin_headers
+    )
+    assert upd.status_code == 200 and upd.json()["allowed_ip"] == "10.0.0.0/24"
+    inside = await client.get("/api/mcp/whoami", headers={**obo, "X-Forwarded-For": "10.0.0.55"})
+    assert inside.status_code == 200
+    outside = await client.get("/api/mcp/whoami", headers={**obo, "X-Forwarded-For": "10.0.1.1"})
+    assert outside.status_code == 401
+
+    # Clear it again → any IP works.
+    cleared = await client.patch(
+        f"/api/mcp/tokens/{tok['id']}", json={"allowed_ip": None}, headers=admin_headers
+    )
+    assert cleared.status_code == 200 and cleared.json()["allowed_ip"] is None
+    r = await client.get("/api/mcp/whoami", headers={**obo, "X-Forwarded-For": "9.9.9.9"})
+    assert r.status_code == 200
+
+
+async def test_invalid_allowed_ip_rejected(client, admin_headers) -> None:
+    r = await client.post(
+        "/api/mcp/tokens", json={"name": "x", "allowed_ip": "not-an-ip"}, headers=admin_headers
+    )
+    assert r.status_code == 422
+
+
 async def test_cannot_revoke_another_users_token(client, admin_headers, make_user) -> None:
     tok = await _make_token(client, admin_headers)
     _, pw = await make_user(username="bob", password="bob-password-1234", role=UserRole.operator)

@@ -60,7 +60,7 @@ async def get_principal(
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid service token")
         obo = request.headers.get("x-mcp-on-behalf-of")
         if obo:
-            obo_user = await mcp_tokens_service.resolve(session, obo)
+            obo_user = await mcp_tokens_service.resolve(session, obo, client_ip(request))
             if obo_user is None:
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid MCP token")
             return Principal.agent(user=obo_user)

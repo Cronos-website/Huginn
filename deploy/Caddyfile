@@ -37,7 +37,12 @@
 
 	# MCP server (streamable HTTP).
 	handle /mcp* {
-		reverse_proxy mcp:9000
+		reverse_proxy mcp:9000 {
+			# Stamp the real client IP into a header the client cannot forge
+			# (overwrites any client-supplied value). The MCP server trusts
+			# this for per-token IP allow-lists.
+			header_up X-Real-IP {remote_host}
+		}
 	}
 
 	# Self-hosted worker artifacts (served from mounted files), so the install

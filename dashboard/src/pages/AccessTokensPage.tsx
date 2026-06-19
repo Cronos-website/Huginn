@@ -1,6 +1,11 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { useCreateMcpToken, useMcpTokens, useRevokeMcpToken } from "../api/hooks";
+import {
+  useCreateMcpToken,
+  useMcpTokens,
+  useRevokeMcpToken,
+  useUpdateMcpToken,
+} from "../api/hooks";
 import type { McpTokenCreated } from "../api/types";
 import { Modal } from "../components/Dialog";
 import { useToast } from "../components/Toast";
@@ -43,12 +48,16 @@ export function AccessTokensPage() {
   const { data: tokens, isLoading } = useMcpTokens();
   const create = useCreateMcpToken();
   const revoke = useRevokeMcpToken();
+  const update = useUpdateMcpToken();
   const toast = useToast();
 
   const [name, setName] = useState("");
+  const [allowedIp, setAllowedIp] = useState("");
   const [created, setCreated] = useState<McpTokenCreated | null>(null);
   const [client, setClient] = useState<ClientId>("claude-code");
   const [reveal, setReveal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editIp, setEditIp] = useState("");
 
   const endpoint = `${window.location.origin}/mcp`;
   const config = useMemo(
@@ -64,12 +73,26 @@ export function AccessTokensPage() {
   async function onCreate() {
     if (!name.trim()) return;
     try {
-      const t = await create.mutateAsync({ name: name.trim() });
+      const t = await create.mutateAsync({
+        name: name.trim(),
+        allowed_ip: allowedIp.trim() || null,
+      });
       setCreated(t);
       setReveal(false);
       setName("");
+      setAllowedIp("");
     } catch (err) {
       toast("err", err instanceof Error ? err.message : "could not create token");
+    }
+  }
+
+  async function saveIp(id: string) {
+    try {
+      await update.mutateAsync({ id, allowed_ip: editIp.trim() || null });
+      setEditingId(null);
+      toast("ok", "IP restriction updated");
+    } catch (err) {
+      toast("err", err instanceof Error ? err.message : "invalid IP / CIDR");
     }
   }
 
@@ -105,9 +128,23 @@ export function AccessTokensPage() {
                 onKeyDown={(e) => e.key === "Enter" && onCreate()}
               />
             </div>
+            <div style={{ width: 200 }}>
+              <label className="lbl">Allowed IP / CIDR (optional)</label>
+              <input
+                className="field"
+                placeholder="any — e.g. 203.0.113.7"
+                value={allowedIp}
+                onChange={(e) => setAllowedIp(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && onCreate()}
+              />
+            </div>
             <button className="btn btn--primary" onClick={onCreate} disabled={create.isPending || !name.trim()}>
               {create.isPending ? <span className="spin" /> : "Create ›"}
             </button>
+          </div>
+          <div className="muted tiny" style={{ marginTop: 10 }}>
+            Bind a token to one machine: if set, it only works from that IP (or CIDR
+            range). Leave blank to allow any source. Editable later.
           </div>
         </motion.div>
 
@@ -117,6 +154,7 @@ export function AccessTokensPage() {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Allowed IP</th>
                 <th>Created</th>
                 <th>Last used</th>
                 <th style={{ textAlign: "right" }}>—</th>
@@ -126,6 +164,38 @@ export function AccessTokensPage() {
               {tokens?.map((t) => (
                 <tr key={t.id} style={{ cursor: "default" }}>
                   <td style={{ fontWeight: 600 }}>{t.name}</td>
+                  <td className="tiny">
+                    {editingId === t.id ? (
+                      <div className="row" style={{ gap: 6 }}>
+                        <input
+                          className="field"
+                          style={{ height: 28, width: 150, padding: "2px 8px" }}
+                          placeholder="any"
+                          autoFocus
+                          value={editIp}
+                          onChange={(e) => setEditIp(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveIp(t.id);
+                            if (e.key === "Escape") setEditingId(null);
+                          }}
+                        />
+                        <button className="btn btn--sm btn--primary" onClick={() => saveIp(t.id)}>save</button>
+                        <button className="btn btn--sm btn--ghost" onClick={() => setEditingId(null)}>×</button>
+                      </div>
+                    ) : (
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        title="Edit IP restriction"
+                        onClick={() => {
+                          setEditingId(t.id);
+                          setEditIp(t.allowed_ip ?? "");
+                        }}
+                        style={{ color: t.allowed_ip ? "var(--signal)" : "var(--dim)" }}
+                      >
+                        {t.allowed_ip ?? "any"} ✎
+                      </button>
+                    )}
+                  </td>
                   <td className="muted tiny">{fmtTime(t.created_at)}</td>
                   <td className="muted tiny">{t.last_used_at ? fmtTime(t.last_used_at) : "never"}</td>
                   <td style={{ textAlign: "right" }}>
@@ -158,6 +228,9 @@ export function AccessTokensPage() {
           <div>
             <p className="muted tiny" style={{ marginBottom: 12 }}>
               Copy this now — the token is shown only once.
+              {created.allowed_ip
+                ? ` It only works from ${created.allowed_ip}.`
+                : " It works from any IP (set a restriction in the list to pin it)."}
             </p>
 
             <label className="lbl">Token</label>

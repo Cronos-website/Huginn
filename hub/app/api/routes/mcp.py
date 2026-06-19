@@ -12,7 +12,13 @@ from app.core import audit
 from app.core.principal import Principal
 from app.db import get_session
 from app.models.user import User
-from app.schemas.mcp import McpTokenCreate, McpTokenCreated, McpTokenOut, WhoAmI
+from app.schemas.mcp import (
+    McpTokenCreate,
+    McpTokenCreated,
+    McpTokenOut,
+    McpTokenUpdate,
+    WhoAmI,
+)
 from app.services import mcp_tokens as mcp_tokens_service
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
@@ -42,17 +48,43 @@ async def create_token(
     session: AsyncSession = Depends(get_session),
 ) -> McpTokenCreated:
     user = _require_user(principal)
-    token, plaintext = await mcp_tokens_service.create(session, user, body.name)
+    token, plaintext = await mcp_tokens_service.create(session, user, body.name, body.allowed_ip)
     await audit.record(
         session,
         actor_type=principal.actor_type,
         actor_id=principal.actor_id,
         event_type="mcp_token_created",
-        detail={"name": token.name},
+        detail={"name": token.name, "allowed_ip": token.allowed_ip},
         source_ip=client_ip(request),
     )
     await session.commit()
-    return McpTokenCreated(id=token.id, name=token.name, token=plaintext)
+    return McpTokenCreated(
+        id=token.id, name=token.name, allowed_ip=token.allowed_ip, token=plaintext
+    )
+
+
+@router.patch("/tokens/{token_id}", response_model=McpTokenOut)
+async def update_token(
+    token_id: uuid.UUID,
+    body: McpTokenUpdate,
+    request: Request,
+    principal: Principal = Depends(get_principal),
+    session: AsyncSession = Depends(get_session),
+) -> McpTokenOut:
+    user = _require_user(principal)
+    token = await mcp_tokens_service.set_allowed_ip(session, token_id, user.id, body.allowed_ip)
+    if token is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "token not found")
+    await audit.record(
+        session,
+        actor_type=principal.actor_type,
+        actor_id=principal.actor_id,
+        event_type="mcp_token_updated",
+        detail={"name": token.name, "allowed_ip": token.allowed_ip},
+        source_ip=client_ip(request),
+    )
+    await session.commit()
+    return token  # type: ignore[return-value]
 
 
 @router.delete("/tokens/{token_id}", status_code=status.HTTP_204_NO_CONTENT)

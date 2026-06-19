@@ -275,8 +275,17 @@ export function useSetUserVms() {
 export function useCreateMcpToken() {
   const invalidate = useInvalidate(["mcp-tokens"]);
   return useMutation({
-    mutationFn: (vars: { name: string }) =>
+    mutationFn: (vars: { name: string; allowed_ip?: string | null }) =>
       api.post<McpTokenCreated>("/api/mcp/tokens", vars),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateMcpToken() {
+  const invalidate = useInvalidate(["mcp-tokens"]);
+  return useMutation({
+    mutationFn: (vars: { id: string; allowed_ip: string | null }) =>
+      api.patch<McpToken>(`/api/mcp/tokens/${vars.id}`, { allowed_ip: vars.allowed_ip }),
     onSuccess: invalidate,
   });
 }
