@@ -21,6 +21,10 @@ duplicated, and it never contacts workers directly.
 > be returned the result the instant the worker reports it, instead of polling
 > `get_task` repeatedly. `list_vms(brief=true)` returns a compact roster (id,
 > name, state, mode) — handy as a session-opening overview.
+>
+> The VM-targeting tools (`get_vm_status`, `execute_action`, `execute_command`,
+> `trigger_update`) accept a VM **id or name**. Prefer the **name** — it's stable
+> across re-enrollment, which mints a new id (a cached id then 404s).
 
 ## Authentication model
 

@@ -7,6 +7,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **MCP tools accept a VM name or id**: `get_vm_status`, `execute_action`,
+  `execute_command`, and `trigger_update` now resolve a VM **name** as well as an
+  id (active record preferred; ambiguous names error). Names are stable across
+  re-enrollment — which mints a new id, so a cached id starts returning 404 — so
+  agents should prefer the name.
 - **Live dashboard (SSE)**: a `GET /api/events` Server-Sent Events stream pushes
   tiny hints (`{"type":"tasks"}` / `"vms"`) to connected dashboards, which
   invalidate the matching query cache — so worker results and background state

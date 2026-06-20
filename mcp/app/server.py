@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from typing import Any
 
 import httpx
@@ -173,6 +174,31 @@ async def _safe(coro: Any) -> Any:
         return {"error": {"status": exc.status_code, "detail": exc.detail}}
 
 
+async def _resolve_vm(vm: str) -> Any:
+    """Accept a VM id **or name** and return the id.
+
+    Names are stable across re-enrollment (which mints a new id), so an agent can
+    refer to ``"web-01"`` instead of a UUID that may have changed. Returns a
+    structured error dict if a name is unknown or ambiguous.
+    """
+    try:
+        uuid.UUID(vm)
+        return vm  # already an id
+    except ValueError:
+        pass
+    vms = await _safe(hub.list_vms())
+    if not isinstance(vms, list):
+        return vms  # propagate a hub error
+    matches = [v for v in vms if v.get("name") == vm]
+    if not matches:
+        return {"error": {"status": 404, "detail": f"no VM named {vm!r}"}}
+    # Prefer the active record if a name was reused across re-enrollments.
+    chosen = [v for v in matches if v.get("state") == "active"] or matches
+    if len(chosen) > 1:
+        return {"error": {"status": 409, "detail": f"{vm!r} matches {len(chosen)} VMs; use the id"}}
+    return chosen[0]["id"]
+
+
 @mcp.tool()
 async def list_vms(state: str | None = None, brief: bool = False) -> Any:
     """List fleet VMs. Optionally filter by state: pending, active, offline, revoked.
@@ -192,38 +218,56 @@ async def list_vms(state: str | None = None, brief: bool = False) -> Any:
 
 @mcp.tool()
 async def get_vm_status(vm_id: str) -> Any:
-    """Get a single VM's full status (state, mode, worker version, heartbeat)."""
-    return await _safe(hub.get_vm(vm_id))
+    """Get a single VM's full status (state, mode, worker version, heartbeat).
+
+    ``vm_id`` may be a VM id or its name.
+    """
+    target = await _resolve_vm(vm_id)
+    if isinstance(target, dict):
+        return target
+    return await _safe(hub.get_vm(target))
 
 
 @mcp.tool()
 async def execute_action(
     vm_id: str, action: str, params: dict[str, str] | None = None, wait: bool = False
 ) -> Any:
-    """Run a whitelisted action on a VM.
+    """Run a whitelisted action on a VM (``vm_id`` may be a VM id or its name).
 
     Allowed actions: status, metrics, restart_service (param: service),
     list_upgradable_packages, apt_upgrade, update_worker. With ``wait=true`` the
     call blocks briefly for a result; otherwise it returns a task to poll.
     """
-    return await _safe(hub.execute_action(vm_id, action, params or {}, wait))
+    target = await _resolve_vm(vm_id)
+    if isinstance(target, dict):
+        return target
+    return await _safe(hub.execute_action(target, action, params or {}, wait))
 
 
 @mcp.tool()
 async def execute_command(vm_id: str, command: str, wait: bool = False) -> Any:
-    """Run a free-form shell command on a VM.
+    """Run a free-form shell command on a VM (``vm_id`` may be a VM id or its name).
 
     Only permitted when the VM is in 'unrestricted' mode (enabled by an admin in
     the dashboard). Subject to the same auth, rate-limit, and audit rules as the
     dashboard.
     """
-    return await _safe(hub.execute_command(vm_id, command, wait))
+    target = await _resolve_vm(vm_id)
+    if isinstance(target, dict):
+        return target
+    return await _safe(hub.execute_command(target, command, wait))
 
 
 @mcp.tool()
 async def trigger_update(vm_id: str) -> Any:
-    """Trigger a worker self-update on a VM toward the hub's target version."""
-    return await _safe(hub.trigger_update(vm_id))
+    """Trigger a worker self-update on a VM toward the hub's target version.
+
+    ``vm_id`` may be a VM id or its name.
+    """
+    target = await _resolve_vm(vm_id)
+    if isinstance(target, dict):
+        return target
+    return await _safe(hub.trigger_update(target))
 
 
 @mcp.tool()
