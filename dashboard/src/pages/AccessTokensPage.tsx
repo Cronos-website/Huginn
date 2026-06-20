@@ -64,6 +64,15 @@ export function AccessTokensPage() {
     () => (created ? buildConfig(client, endpoint, created.token) : ""),
     [client, endpoint, created],
   );
+  // What's shown on screen: the token is masked (like the field above) unless
+  // revealed. The copy button always copies the real, full config.
+  const shownConfig = useMemo(
+    () =>
+      !created || reveal
+        ? config
+        : config.replaceAll(created.token, `****${created.token.slice(-8)}`),
+    [config, created, reveal],
+  );
 
   const copy = (text: string, what = "copied") => {
     navigator.clipboard?.writeText(text);
@@ -252,7 +261,7 @@ export function AccessTokensPage() {
             </div>
             <div className="muted tiny" style={{ marginBottom: 8 }}>{CLIENTS.find((c) => c.id === client)?.hint}</div>
             <div style={{ position: "relative" }}>
-              <pre className="codeblock" style={{ margin: 0, maxHeight: 320 }}>{config}</pre>
+              <pre className="codeblock" style={{ margin: 0, maxHeight: 320 }}>{shownConfig}</pre>
               <button className="btn btn--sm" style={{ position: "absolute", top: 8, right: 8 }} onClick={() => copy(config, "config copied")}>
                 copy config
               </button>
