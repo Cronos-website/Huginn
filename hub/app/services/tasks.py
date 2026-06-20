@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import timedelta
 
@@ -10,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core import task_events
 from app.core.actions import validate_action
 from app.models.enums import ExecMode, TaskStatus, TaskType, VMState
 from app.models.mixins import as_aware_utc, utcnow
@@ -194,6 +196,47 @@ async def get_task(session: AsyncSession, task_id: uuid.UUID) -> Task | None:
     return await session.get(Task, task_id)
 
 
+async def wait_for_terminal(
+    session: AsyncSession, task_id: uuid.UUID, timeout: float
+) -> Task | None:
+    """Block until the task reaches a terminal state or ``timeout`` elapses.
+
+    Event-driven: woken instantly by ``submit_result`` rather than polling.
+    Returns the task in whatever state it's in when we stop waiting, or None if
+    it doesn't exist. The caller is responsible for the access check.
+    """
+    # Subscribe BEFORE the first read so a result that commits in the gap still
+    # wakes us (its notify sets the event; we then observe the terminal state).
+    event = task_events.subscribe(str(task_id))
+    try:
+        task = await get_task(session, task_id)
+        if task is None:
+            return None
+        if TaskStatus(task.status).is_terminal:
+            return task
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            try:
+                await asyncio.wait_for(event.wait(), remaining)
+            except TimeoutError:
+                break
+            event.clear()
+            # Commit to drop our snapshot, then re-read the worker's committed row.
+            await session.commit()
+            await session.refresh(task)
+            if TaskStatus(task.status).is_terminal:
+                return task
+        await session.commit()
+        await session.refresh(task)
+        return task
+    finally:
+        task_events.unsubscribe(str(task_id), event)
+
+
 async def has_inflight_update(session: AsyncSession, vm_id: uuid.UUID) -> bool:
     """True if an update task for this VM is still pending or dispatched."""
     result = await session.execute(
@@ -275,6 +318,7 @@ async def sweep_timeouts(session: AsyncSession) -> int:
         select(Task).where(Task.status.in_([TaskStatus.dispatched, TaskStatus.running]))
     )
     swept = 0
+    dead_lettered: list[str] = []
     for task in result.scalars():
         dispatched = task.dispatched_at or task.created_at
         if as_aware_utc(dispatched) + grace > now:
@@ -284,11 +328,15 @@ async def sweep_timeouts(session: AsyncSession) -> int:
             task.status = TaskStatus.dead_letter
             task.finished_at = now
             task.error = "exceeded retry budget (dead-lettered)"
+            dead_lettered.append(str(task.id))
         else:
             task.status = TaskStatus.pending
             task.dispatched_at = None
         swept += 1
     await session.flush()
+    # Wake any waiters on tasks that just reached a terminal (dead-letter) state.
+    for task_id in dead_lettered:
+        task_events.notify(task_id)
     return swept
 
 

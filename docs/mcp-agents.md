@@ -306,8 +306,15 @@ Once connected, the agent has access to these tools:
 | `execute_action(vm_id, action, params?, wait?)` | Run a whitelisted action |
 | `execute_command(vm_id, command, wait?)` | Free shell command (unrestricted VMs only) |
 | `trigger_update(vm_id)` | Trigger worker self-update |
-| `get_task(task_id)` | Poll task status and result |
+| `get_task(task_id)` | Poll task status and result once |
+| `wait_for_task(task_id, timeout?)` | Block until the task finishes (or timeout) — avoids a poll loop |
 | `get_audit_log(vm_id?, event_type?, limit?)` | Read audit entries |
+
+> **Long tasks:** after launching an action/command with `wait=false`, call
+> `wait_for_task(task_id)` — it returns the moment the worker reports a result
+> (event-driven server-side, no busy polling). If it's still running when the
+> timeout elapses, the current state is returned; just call again to keep waiting.
+> Use `list_vms(brief=true)` for a compact roster (id, name, state, mode).
 
 ### Whitelisted actions
 

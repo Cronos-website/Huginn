@@ -233,6 +233,18 @@ async def get_task(task_id: str) -> Any:
 
 
 @mcp.tool()
+async def wait_for_task(task_id: str, timeout: int = 60) -> Any:
+    """Block until a task finishes (succeeded/failed/timeout) or ``timeout``
+    seconds pass, then return it — instead of polling get_task in a loop.
+
+    Ideal after launching a long action/command with wait=false: the call returns
+    the instant the worker reports a result. If still running when the timeout
+    elapses, the task's current state is returned; just call again to keep waiting.
+    """
+    return await _safe(hub.wait_task(task_id, timeout))
+
+
+@mcp.tool()
 async def get_audit_log(
     vm_id: str | None = None, event_type: str | None = None, limit: int = 100
 ) -> Any:

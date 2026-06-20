@@ -13,8 +13,14 @@ duplicated, and it never contacts workers directly.
 | `execute_action(vm_id, action, params?, wait?)` | Run a whitelisted action. |
 | `execute_command(vm_id, command, wait?)` | Run a free command (unrestricted VMs only). |
 | `trigger_update(vm_id)` | Update a worker toward the target version. |
-| `get_task(task_id)` | Poll a task's status/result. |
+| `get_task(task_id)` | Poll a task's status/result once. |
+| `wait_for_task(task_id, timeout?)` | Block until the task finishes (or timeout) — no poll loop. |
 | `get_audit_log(vm_id?, event_type?, limit?)` | Read audit entries. |
+
+> For a long action/command launched with `wait=false`, call `wait_for_task` to
+> be returned the result the instant the worker reports it, instead of polling
+> `get_task` repeatedly. `list_vms(brief=true)` returns a compact roster (id,
+> name, state, mode) — handy as a session-opening overview.
 
 ## Authentication model
 

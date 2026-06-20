@@ -83,6 +83,11 @@ class HubClient:
     async def get_task(self, task_id: str) -> dict:
         return await self._request("GET", f"/api/tasks/{task_id}")
 
+    async def wait_task(self, task_id: str, timeout: int) -> dict:
+        return await self._request(
+            "GET", f"/api/tasks/{task_id}/wait", params={"timeout": timeout}
+        )
+
     async def get_audit_log(
         self, vm_id: str | None, event_type: str | None, limit: int
     ) -> list[dict]:

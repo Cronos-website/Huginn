@@ -149,6 +149,50 @@ async def test_auto_update_disabled_queues_nothing(
     assert poll.json() is None
 
 
+async def test_wait_endpoint_wakes_on_result(client, admin_headers, enrolled_worker) -> None:
+    import asyncio
+
+    w = await enrolled_worker()
+    r = await client.post(
+        f"/api/vms/{w['vm_id']}/actions", json={"action": "status"}, headers=admin_headers
+    )
+    task_id = r.json()["id"]
+    claimed = (await client.get("/api/worker/tasks/next", headers=w["headers"])).json()
+    assert claimed["id"] == task_id
+
+    async def submit_after_delay() -> None:
+        await asyncio.sleep(0.4)
+        await client.post(
+            f"/api/worker/tasks/{task_id}/result",
+            json={"status": "succeeded", "exit_code": 0, "stdout": "hi"},
+            headers=w["headers"],
+        )
+
+    # Block on /wait while the worker reports the result mid-flight.
+    waiter = asyncio.create_task(
+        client.get(f"/api/tasks/{task_id}/wait?timeout=5", headers=admin_headers)
+    )
+    await submit_after_delay()
+    resp = await waiter
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "succeeded"
+    assert resp.json()["stdout"] == "hi"
+
+
+async def test_wait_endpoint_times_out_with_current_state(
+    client, admin_headers, enrolled_worker
+) -> None:
+    w = await enrolled_worker()
+    r = await client.post(
+        f"/api/vms/{w['vm_id']}/actions", json={"action": "status"}, headers=admin_headers
+    )
+    task_id = r.json()["id"]
+    # Never completed → returns the current (non-terminal) state at timeout=0.
+    resp = await client.get(f"/api/tasks/{task_id}/wait?timeout=0", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.json()["status"] in ("pending", "dispatched")
+
+
 async def test_unknown_action_rejected(client, admin_headers, enrolled_worker) -> None:
     w = await enrolled_worker()
     resp = await client.post(

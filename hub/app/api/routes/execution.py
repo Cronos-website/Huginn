@@ -7,7 +7,6 @@ task immediately (async) and the caller polls ``GET /api/tasks/{id}``.
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -24,7 +23,6 @@ from app.core import audit
 from app.core.actions import ActionError
 from app.core.principal import Principal
 from app.db import get_session
-from app.models.enums import TaskStatus
 from app.models.task import Task
 from app.schemas.task import (
     ActionRequest,
@@ -41,7 +39,6 @@ from app.services.versioning import SSRFError
 
 router = APIRouter(prefix="/api/vms", tags=["execution"])
 
-_WAIT_POLL_SECONDS = 0.25
 _WAIT_MAX_SECONDS = 30.0
 
 
@@ -56,21 +53,12 @@ async def _maybe_wait(session: AsyncSession, task: Task, wait: bool) -> Task:
     if not wait:
         return task
     # Commit the task creation + audit first: this ends the request's transaction
-    # snapshot so subsequent reads can observe the worker's independently-committed
-    # result, and it avoids holding a transaction open across the poll loop.
+    # snapshot so the worker's independently-committed result is observable, and
+    # frees the connection while we block.
     await session.commit()
-    waited = 0.0
-    while True:
-        await session.refresh(task)
-        if TaskStatus(task.status).is_terminal:
-            return task
-        if waited >= _WAIT_MAX_SECONDS:
-            return task
-        # Commit to release the snapshot opened by refresh, so the next read is
-        # fresh regardless of isolation level.
-        await session.commit()
-        await asyncio.sleep(_WAIT_POLL_SECONDS)
-        waited += _WAIT_POLL_SECONDS
+    # Event-driven: woken the instant the worker submits the result (no polling).
+    result = await tasks_service.wait_for_terminal(session, task.id, _WAIT_MAX_SECONDS)
+    return result if result is not None else task
 
 
 @router.post(

@@ -7,6 +7,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Event-driven task completion**: a new `GET /api/tasks/{id}/wait` long-poll
+  blocks until a task is terminal (or a timeout), woken the instant the worker
+  submits its result instead of polling. `wait=true` on actions/commands now uses
+  the same mechanism (no more internal 0.25s poll loop). New MCP tool
+  `wait_for_task(task_id, timeout?)` so agents stop poll-looping `get_task` after
+  launching a long task with `wait=false`.
+- **Compact roster**: MCP `list_vms(brief=true)` returns just id, name, state,
+  mode per VM — a low-token session-opening overview.
+- **Worker retry**: idempotent read-only actions (status, metrics,
+  list_upgradable_packages) retry with exponential backoff on transient failure;
+  mutating actions and free commands still run exactly once.
+- **Telemetry on approval**: approving a pending VM auto-queues a status+metrics
+  refresh so the dashboard shows live data on the pending→active transition.
 - **Per-user MCP tokens**: each user creates, names, and revokes their own MCP
   tokens in the dashboard (MCP Tokens page). Actions taken through MCP now run
   with the user's **real role** and are attributed to them in the audit log as

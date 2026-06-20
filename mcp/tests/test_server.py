@@ -30,6 +30,10 @@ class FakeHub:
         self.calls.append(("trigger_update", vm_id))
         return {"id": "t1", "type": "update"}
 
+    async def wait_task(self, task_id, timeout):
+        self.calls.append(("wait_task", task_id, timeout))
+        return {"id": task_id, "status": "succeeded"}
+
 
 @pytest.mark.asyncio
 async def test_list_vms_tool_delegates(monkeypatch) -> None:
@@ -38,6 +42,15 @@ async def test_list_vms_tool_delegates(monkeypatch) -> None:
     result = await server.list_vms(state="active")
     assert result[0]["id"] == "vm1" and result[0]["worker_version"] == "v1.0.0"
     assert fake.calls == [("list_vms", "active")]
+
+
+@pytest.mark.asyncio
+async def test_wait_for_task_tool_delegates(monkeypatch) -> None:
+    fake = FakeHub()
+    monkeypatch.setattr(server, "hub", fake)
+    result = await server.wait_for_task("task-1", timeout=42)
+    assert result == {"id": "task-1", "status": "succeeded"}
+    assert fake.calls == [("wait_task", "task-1", 42)]
 
 
 @pytest.mark.asyncio
