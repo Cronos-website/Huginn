@@ -130,12 +130,14 @@ async def enrolled_worker(client, admin_headers):
         )
         body = enroll.json()
         vm_id, secret = body["worker_id"], body["worker_secret"]
+        wh = {"X-Worker-Id": vm_id, "X-Worker-Secret": secret}
         await client.post(f"/api/vms/{vm_id}/approve", headers=admin_headers)
-        return {
-            "vm_id": vm_id,
-            "secret": secret,
-            "headers": {"X-Worker-Id": vm_id, "X-Worker-Secret": secret},
-        }
+        # Approval auto-queues a status+metrics telemetry refresh. Drain it so the
+        # fixture hands back an empty queue (tests enqueue their own tasks); the
+        # refresh behaviour itself is covered by test_post_approve_refresh.
+        for _ in range(2):
+            await client.get("/api/worker/tasks/next", headers=wh)
+        return {"vm_id": vm_id, "secret": secret, "headers": wh}
 
     return _make
 

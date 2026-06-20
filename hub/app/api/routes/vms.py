@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -26,6 +27,7 @@ from app.services import tags as tags_service
 from app.services import tasks as tasks_service
 from app.services import vms as vms_service
 
+logger = logging.getLogger("huginn.vms")
 router = APIRouter(prefix="/api/vms", tags=["vms"])
 
 
@@ -105,6 +107,7 @@ async def approve_vm(
     session: AsyncSession = Depends(get_session),
 ) -> VMOut:
     vm = await _load_vm(session, vm_id)
+    was_pending = vm.state is VMState.pending
     try:
         approved_by = principal.user.id if principal.user else None
         vm = await vms_service.approve(session, vm, approved_by=approved_by)
@@ -118,6 +121,21 @@ async def approve_vm(
         vm_id=vm.id,
         source_ip=client_ip(request),
     )
+    # On the pending→active transition, queue a status + metrics refresh so the
+    # dashboard shows live telemetry as soon as the worker next polls — no manual
+    # "run status" needed. Best-effort: never let it fail the approval.
+    if was_pending:
+        for action in ("status", "metrics"):
+            try:
+                await tasks_service.create_action_task(
+                    session,
+                    vm=vm,
+                    action_name=action,
+                    params=None,
+                    created_by="system:post-approve",
+                )
+            except Exception:  # noqa: BLE001 - telemetry refresh is best-effort
+                logger.warning("could not queue %s refresh for vm %s", action, vm.id)
     return VMOut.model_validate(vm)
 
 

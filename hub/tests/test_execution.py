@@ -36,6 +36,29 @@ async def test_whitelist_action_full_cycle(client, admin_headers, enrolled_worke
     assert final.json()["stdout"] == "ok"
 
 
+async def test_post_approve_refresh(client, admin_headers) -> None:
+    # Approving a pending VM auto-queues a status + metrics telemetry refresh,
+    # so the dashboard shows live data without a manual "run status".
+    tok = await client.post("/api/enrollment-tokens", json={}, headers=admin_headers)
+    token = tok.json()["token"]
+    enroll = await client.post(
+        "/api/worker/enroll", json={"token": token, "name": "fresh", "arch": "amd64"}
+    )
+    body = enroll.json()
+    vm_id, secret = body["worker_id"], body["worker_secret"]
+    wh = {"X-Worker-Id": vm_id, "X-Worker-Secret": secret}
+
+    await client.post(f"/api/vms/{vm_id}/approve", headers=admin_headers)
+
+    handed = []
+    for _ in range(3):
+        t = (await client.get("/api/worker/tasks/next", headers=wh)).json()
+        if t is None:
+            break
+        handed.append(t["action_name"])
+    assert handed == ["status", "metrics"]
+
+
 async def test_long_poll_returns_empty_when_idle(client, enrolled_worker) -> None:
     w = await enrolled_worker()
     # With a tiny wait and no queued task, returns null after the wait (not 30s).

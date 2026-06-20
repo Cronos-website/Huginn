@@ -18,7 +18,10 @@ class FakeHub:
 
     async def list_vms(self, state=None):
         self.calls.append(("list_vms", state))
-        return [{"id": "vm1", "state": state or "active"}]
+        return [
+            {"id": "vm1", "name": "web-01", "state": state or "active",
+             "exec_mode": "restricted", "ip_address": "10.0.0.1", "worker_version": "v1.0.0"}
+        ]
 
     async def execute_command(self, vm_id, command, wait):
         raise HubError(403, "VM is not in unrestricted mode")
@@ -33,8 +36,15 @@ async def test_list_vms_tool_delegates(monkeypatch) -> None:
     fake = FakeHub()
     monkeypatch.setattr(server, "hub", fake)
     result = await server.list_vms(state="active")
-    assert result == [{"id": "vm1", "state": "active"}]
+    assert result[0]["id"] == "vm1" and result[0]["worker_version"] == "v1.0.0"
     assert fake.calls == [("list_vms", "active")]
+
+
+@pytest.mark.asyncio
+async def test_list_vms_brief_projects_essentials(monkeypatch) -> None:
+    monkeypatch.setattr(server, "hub", FakeHub())
+    result = await server.list_vms(brief=True)
+    assert result == [{"id": "vm1", "name": "web-01", "state": "active", "mode": "restricted"}]
 
 
 @pytest.mark.asyncio

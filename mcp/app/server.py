@@ -174,9 +174,20 @@ async def _safe(coro: Any) -> Any:
 
 
 @mcp.tool()
-async def list_vms(state: str | None = None) -> Any:
-    """List fleet VMs. Optionally filter by state: pending, active, offline, revoked."""
-    return await _safe(hub.list_vms(state))
+async def list_vms(state: str | None = None, brief: bool = False) -> Any:
+    """List fleet VMs. Optionally filter by state: pending, active, offline, revoked.
+
+    With ``brief=true`` each VM is reduced to just id, name, state, and mode —
+    a compact roster ideal for a session-opening overview (far fewer tokens).
+    """
+    vms = await _safe(hub.list_vms(state))
+    if brief and isinstance(vms, list):
+        return [
+            {"id": v.get("id"), "name": v.get("name"),
+             "state": v.get("state"), "mode": v.get("exec_mode")}
+            for v in vms
+        ]
+    return vms
 
 
 @mcp.tool()
