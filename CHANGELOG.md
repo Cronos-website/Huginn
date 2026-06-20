@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Per-user MCP tokens**: each user creates, names, and revokes their own MCP
+  tokens in the dashboard (MCP Tokens page). Actions taken through MCP now run
+  with the user's **real role** and are attributed to them in the audit log as
+  `mcp · <username>`, with the originating client IP.
+- **Per-token IP allow-list**: an MCP token can be pinned to a single IP or CIDR
+  (editable later). Requests from any other source are rejected. The check uses
+  the real client IP stamped by Caddy as `X-Real-IP` (overwriting client-supplied
+  values), so it cannot be bypassed by forging a header.
+
+### Changed
+- The single shared MCP **client token** (`HUGINN_MCP_MCP_CLIENT_TOKEN`,
+  hub-generated and dashboard-rotatable) is **replaced** by the per-user tokens
+  above. The MCP server no longer takes a client-token env var; the HTTP endpoint
+  is gated by per-user tokens validated against the hub. `HUGINN_MCP_SERVICE_TOKEN`
+  (MCP↔hub trust) is unchanged. Existing agents must switch to a per-user token.
+- The MCP streamable-http server now runs stateless, so each request is
+  attributed to the user that made it (not the user that opened the session).
+
+### Removed
+- `GET/PUT /api/settings/mcp-token` and the `settings.mcp_client_token` column.
+
 ## [1.0.0] - 2026-06-18
 
 ### Added

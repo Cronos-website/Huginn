@@ -16,6 +16,43 @@ duplicated, and it never contacts workers directly.
 | `get_task(task_id)` | Poll a task's status/result. |
 | `get_audit_log(vm_id?, event_type?, limit?)` | Read audit entries. |
 
+## Authentication model
+
+Two layers, kept distinct:
+
+| Token | Where it lives | Purpose |
+|---|---|---|
+| **Service token** (`HUGINN_MCP_SERVICE_TOKEN`) | Env var on the MCP server + hub | Proves "I am the MCP server" on every MCP→hub call. Server-held, never given to agents. |
+| **Per-user MCP token** | Created by each user in the dashboard → **MCP Tokens** | Identifies the *end user*. The agent sends it as `Authorization: Bearer <token>`. |
+
+How a request flows on **streamable-http**:
+
+1. The agent sends `Authorization: Bearer <per-user-token>`.
+2. The MCP server validates that token against the hub and forwards it as
+   `X-MCP-On-Behalf-Of` alongside the service token.
+3. The hub resolves the token → its owning user and acts **as that user**: the
+   action runs with the user's real role and is attributed to them in the audit
+   log as `mcp · <username>`.
+
+A per-user token alone is useless: it is only honoured when presented *together*
+with the server-held service token, so a leaked user token cannot hit the hub
+directly. Tokens are stored HMAC-hashed and shown in plaintext only once.
+
+> **stdio** has no HTTP layer and therefore no per-user token. In stdio mode the
+> MCP server calls the hub with the service token only, acting as the anonymous
+> automation agent (**operator, not admin**, no per-user attribution). Use
+> **streamable-http** when you want per-user identity, real-role enforcement, and
+> `mcp · <username>` attribution.
+
+### Per-token IP allow-list (optional)
+
+Each token can be pinned to a single IP or CIDR (set at creation, editable
+later, or left blank for "any"). A request from any other source is rejected.
+For this to be a real control rather than a header anyone can forge, the edge
+proxy must stamp the real client IP into `X-Real-IP` (the bundled Caddyfile does
+this on `/mcp`, overwriting client-supplied values); the MCP server trusts that
+and forwards it to the hub. See [mcp-agents.md](mcp-agents.md#network-security).
+
 ## Configuration
 
 | Env var | Default | Meaning |
@@ -24,7 +61,9 @@ duplicated, and it never contacts workers directly.
 | `HUGINN_MCP_SERVICE_TOKEN` | — | Service token (must match the hub's `HUGINN_MCP_SERVICE_TOKEN`). |
 | `HUGINN_MCP_TRANSPORT` | `stdio` | `stdio` or `streamable-http`. |
 | `HUGINN_MCP_HOST` / `HUGINN_MCP_PORT` | `0.0.0.0` / `9000` | HTTP bind (streamable-http). |
-| `HUGINN_MCP_MCP_CLIENT_TOKEN` | — | Bearer token agents must send to reach the HTTP endpoint. **Required for streamable-http in production.** Ignored for stdio. |
+
+There is **no** client-token env var anymore — the HTTP endpoint is gated by
+per-user tokens validated against the hub.
 
 ## Adding it to an agent
 
@@ -48,24 +87,23 @@ duplicated, and it never contacts workers directly.
 
 ### Streamable HTTP (remote)
 
-Start the server (or the `mcp` compose service) with `HUGINN_MCP_TRANSPORT=streamable-http`
-and `HUGINN_MCP_MCP_CLIENT_TOKEN=<token>`, then point the agent at it:
+1. Create a token in the dashboard → **MCP Tokens** (copy it — shown once).
+2. Run the server (or the `mcp` compose service) with
+   `HUGINN_MCP_TRANSPORT=streamable-http`.
+3. Point the agent at it, sending your per-user token:
 
 ```json
 {
   "mcpServers": {
     "huginn": {
-      "url": "https://mcp.example.com/mcp",
+      "url": "https://your-host/mcp",
       "headers": {
-        "Authorization": "Bearer <mcp-client-token>"
+        "Authorization": "Bearer <your-per-user-token>"
       }
     }
   }
 }
 ```
-
-> **Without `HUGINN_MCP_MCP_CLIENT_TOKEN`**, the HTTP endpoint is open to anyone
-> who can reach it. Always set this token in production.
 
 ## Connecting to other agents
 
@@ -74,17 +112,11 @@ Hermes, Claude Desktop, Claude Code, Cursor, Continue, OpenAI proxies, and more.
 
 ## Security notes
 
-Two tokens are involved — don't confuse them:
-
-| Token | Env var | Purpose |
-|---|---|---|
-| **Service token** | `HUGINN_MCP_SERVICE_TOKEN` | MCP server → Hub (internal). The MCP server uses this to call the hub API. |
-| **Client token** | `HUGINN_MCP_MCP_CLIENT_TOKEN` | Agent → MCP server (external). Agents must send this as `Authorization: Bearer <token>` to reach the HTTP endpoint. |
-
-- The service token grants admin-equivalent agent access — keep it secret and
-  scope network access to the MCP endpoint.
-- The client token protects the MCP HTTP endpoint itself. Without it, anyone who
-  can reach port 9000 can execute commands on your fleet.
-- All actions flow through the same hub authz, rate limits, and audit log as the
-  dashboard. `execute_command` still requires the target VM to be in unrestricted
-  mode.
+- The **service token** grants automation access to the hub (operator-level for
+  service-only calls). Keep it secret and scope network access to the endpoint.
+- **Per-user tokens** carry the owner's real role. Make one per agent/machine,
+  pin it to an IP where practical, and revoke any you no longer use — each is
+  individually revocable from the dashboard.
+- Every action flows through the same hub authz, rate limits, and tamper-evident
+  audit log as the dashboard, attributed to the acting user.
+- `execute_command` still requires the target VM to be in unrestricted mode.

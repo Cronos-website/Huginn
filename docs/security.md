@@ -8,8 +8,10 @@ infrastructure: lock down the hub, use TLS, and keep the audit log.
 - The hub is the trust anchor and must be deployed behind TLS with strong secrets.
 - Workers are semi-trusted: they only ever run what an authenticated principal
   asked for, and only after manual approval.
-- The MCP agent ("Hermes") is a trusted, admin-level automation principal,
-  authenticated by a service token.
+- The MCP server is a trusted façade authenticated by a service token. It acts
+  either as the anonymous automation agent (operator, not admin) or, when an
+  agent presents a per-user MCP token, **on behalf of that user with the user's
+  real role** — every such action is attributed to the user in the audit log.
 
 ## Controls
 
@@ -22,8 +24,10 @@ infrastructure: lock down the hub, use TLS, and keep the audit log.
   other compliant IdPs should work but are unverified.
 - RBAC has three capability tiers:
   - **read-only user** — list/inspect only; cannot execute.
-  - **operator** (admin user *or* the automation agent) — run actions/commands,
-    trigger updates, read the audit log.
+  - **operator** (admin user *or* the anonymous automation agent) — run
+    actions/commands, trigger updates, read the audit log. A per-user MCP token
+    grants exactly its owner's role, no more (a read-only user's token cannot
+    execute).
   - **admin** (human admin user only) — control-plane operations: approve/revoke
     VMs, toggle unrestricted mode, manage enrollment tokens, change settings.
 - **Two-factor authentication** for local accounts: TOTP (with single-use backup
@@ -31,9 +35,15 @@ infrastructure: lock down the hub, use TLS, and keep the audit log.
   intermediate post-password "challenge token" is scope-restricted and rejected
   by every business endpoint. Admin 2FA can be enforced. Full details and the
   threat properties are in [auth.md](auth.md).
-- The MCP façade authenticates with a service token and acts as an **operator,
-  not an admin**: a leaked service token cannot approve VMs, enable unrestricted
-  mode, or change the release allowlist.
+- The MCP façade authenticates with a service token. Service-token-only calls
+  act as an **operator, not an admin**: they cannot approve VMs, enable
+  unrestricted mode, or change the release allowlist. Agents authenticate with
+  **per-user MCP tokens** (created/revoked in the dashboard, stored HMAC-hashed,
+  shown once); the hub resolves each to its owner and enforces that user's real
+  role. A per-user token is only honoured alongside the server-held service
+  token, so a leaked user token cannot reach the hub on its own. Tokens may be
+  pinned to an IP/CIDR; the allow-list is checked against the real client IP
+  (stamped by the edge proxy as `X-Real-IP`, not client-forgeable).
 - Workers authenticate with their VM id + a per-worker secret on every request;
   PENDING/REVOKED workers are rejected.
 
