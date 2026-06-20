@@ -23,8 +23,9 @@ duplicated, and it never contacts workers directly.
 > name, state, mode) — handy as a session-opening overview.
 >
 > The VM-targeting tools (`get_vm_status`, `execute_action`, `execute_command`,
-> `trigger_update`) accept a VM **id or name**. Prefer the **name** — it's stable
-> across re-enrollment, which mints a new id (a cached id then 404s).
+> `trigger_update`) accept a VM **id or name** (name match is case-insensitive).
+> Prefer the **name** — it's stable across re-enrollment, which mints a new id (a
+> cached id then 404s).
 
 ## Authentication model
 

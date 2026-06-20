@@ -189,7 +189,11 @@ async def _resolve_vm(vm: str) -> Any:
     vms = await _safe(hub.list_vms())
     if not isinstance(vms, list):
         return vms  # propagate a hub error
+    # Exact match first; fall back to case-insensitive so "vm-plane-global"
+    # resolves "VM-Plane-Global" without the agent guessing the casing.
     matches = [v for v in vms if v.get("name") == vm]
+    if not matches:
+        matches = [v for v in vms if (v.get("name") or "").lower() == vm.lower()]
     if not matches:
         return {"error": {"status": 404, "detail": f"no VM named {vm!r}"}}
     # Prefer the active record if a name was reused across re-enrollments.

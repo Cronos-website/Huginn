@@ -67,6 +67,14 @@ async def test_vm_tool_resolves_name_to_id(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_vm_tool_resolves_name_case_insensitively(monkeypatch) -> None:
+    fake = FakeHub()
+    monkeypatch.setattr(server, "hub", fake)
+    await server.execute_action("WEB-01", "status")  # stored as "web-01"
+    assert ("execute_action", _VM_ID, "status") in fake.calls
+
+
+@pytest.mark.asyncio
 async def test_vm_tool_uuid_passes_through_without_listing(monkeypatch) -> None:
     fake = FakeHub()
     monkeypatch.setattr(server, "hub", fake)
