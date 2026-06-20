@@ -8,13 +8,13 @@ from app.core import events
 
 
 async def test_events_rejects_invalid_token(client) -> None:
-    resp = await client.get("/api/events?token=bogus")
+    resp = await client.get("/api/events", headers={"Authorization": "Bearer bogus"})
     assert resp.status_code == 401
 
 
-async def test_events_requires_token(client) -> None:
+async def test_events_requires_auth(client) -> None:
     resp = await client.get("/api/events")
-    assert resp.status_code == 422  # missing required query param
+    assert resp.status_code == 401  # no Authorization header
 
 
 async def test_event_bus_fans_out_to_all_subscribers() -> None:

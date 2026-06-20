@@ -4,54 +4,39 @@ Connected dashboards receive tiny hints (``{"type": "tasks"}`` / ``"vms"``) and
 invalidate the matching query cache, so the UI refreshes the instant something
 changes instead of waiting for its periodic poll.
 
-EventSource cannot send an Authorization header, so the JWT is passed as a
-``token`` query parameter (same-origin, over TLS). The DB session is used only to
-authenticate and is released before streaming, so an open stream never holds a
-pooled connection.
+Authenticated with the normal ``Authorization: Bearer`` header (the dashboard
+reads the stream via fetch, not EventSource), so no token ever appears in a URL
+or access log. The DB connection is released before streaming, so an open stream
+never holds a pooled connection.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_principal
 from app.core import events
-from app.core.jwt import MFA_SCOPES, TokenError, decode_access_token
+from app.core.principal import Principal
 from app.db import get_session
-from app.services import users as users_service
 
 router = APIRouter(prefix="/api", tags=["events"])
 
 _KEEPALIVE_SECONDS = 20.0
 
 
-async def _authenticate(session: AsyncSession, token: str) -> None:
-    try:
-        payload = decode_access_token(token)
-        user_id = uuid.UUID(payload["sub"])
-    except (TokenError, KeyError, ValueError) as exc:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token") from exc
-    if payload.get("scope") in MFA_SCOPES:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token not valid for API access")
-    user = await users_service.get_by_id(session, user_id)
-    if user is None or not user.is_active:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "user not found or inactive")
-
-
 @router.get("/events")
 async def events_stream(
     request: Request,
-    token: str = Query(...),
+    principal: Principal = Depends(get_principal),
     session: AsyncSession = Depends(get_session),
 ) -> StreamingResponse:
-    await _authenticate(session, token)
-    # Release the pooled connection before the (potentially long-lived) stream;
-    # the stream itself never touches the database.
+    # Authenticated via the Authorization header (get_principal). Release the
+    # pooled connection before the long-lived stream, which never touches the DB.
     await session.close()
     queue = events.subscribe()
 
