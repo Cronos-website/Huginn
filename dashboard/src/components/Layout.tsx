@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useVms } from "../api/hooks";
+import { useLiveEvents } from "../api/useLiveEvents";
 import { useAuth } from "../auth/AuthContext";
 import type { User, VM, VMState } from "../api/types";
 
@@ -181,6 +182,7 @@ function ProfileMenu({ user, onLogout }: { user: User | null; onLogout: () => vo
 export function Layout() {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === "admin";
+  useLiveEvents(); // refresh caches live from the hub's SSE stream
 
   return (
     <div style={{ minHeight: "100%", display: "flex", flexDirection: "column" }}>

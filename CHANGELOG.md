@@ -7,6 +7,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Live dashboard (SSE)**: a `GET /api/events` Server-Sent Events stream pushes
+  tiny hints (`{"type":"tasks"}` / `"vms"`) to connected dashboards, which
+  invalidate the matching query cache — so worker results and background state
+  changes (offline detection, swept tasks) appear instantly instead of waiting
+  for the next poll. The DB connection is released before streaming; periodic
+  polling stays as a fallback. Built on the same in-process notifier as the task
+  wait endpoint.
 - **Event-driven task completion**: a new `GET /api/tasks/{id}/wait` long-poll
   blocks until a task is terminal (or a timeout), woken the instant the worker
   submits its result instead of polling. `wait=true` on actions/commands now uses

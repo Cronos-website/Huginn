@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.core import events
 from app.db import SessionFactory
 from app.services import notifications as notifications_service
 from app.services import scheduled_commands as schedules_service
@@ -25,6 +26,11 @@ async def run_sweeper(stop: asyncio.Event) -> None:
                 gone_offline = await tasks_service.sweep_offline_vms(session)
                 scheduled = await schedules_service.run_due(session)
                 await session.commit()
+                # Push live hints for changes the user didn't trigger themselves.
+                if gone_offline:
+                    events.publish({"type": "vms"})
+                if timed_out or scheduled:
+                    events.publish({"type": "tasks"})
                 if timed_out or gone_offline or scheduled:
                     logger.info(
                         "sweeper: %d task(s) swept, %d VM(s) offline, %d scheduled task(s)",

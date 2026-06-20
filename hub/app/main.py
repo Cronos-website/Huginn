@@ -96,6 +96,7 @@ def create_app() -> FastAPI:
         audit,
         auth,
         enrollment,
+        events,
         execution,
         mcp,
         mfa,
@@ -121,6 +122,7 @@ def create_app() -> FastAPI:
     app.include_router(execution.router)
     app.include_router(tasks.router)
     app.include_router(audit.router)
+    app.include_router(events.router)
     app.include_router(settings_routes.router)
     app.include_router(worker.router)
 

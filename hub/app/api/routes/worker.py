@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import client_ip, current_worker
 from app.config import Settings, get_settings
-from app.core import audit, task_events
+from app.core import audit, events, task_events
 from app.db import get_session
 from app.models.enums import ActorType, TaskStatus, VMState
 from app.models.mixins import utcnow
@@ -205,9 +205,11 @@ async def submit_result(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "task not found for this worker")
 
     # Commit the result, then wake anyone blocked in wait_for_terminal (e.g. an
-    # agent that called /tasks/{id}/wait or an execute with wait=true).
+    # agent that called /tasks/{id}/wait or an execute with wait=true) and push a
+    # live hint to connected dashboards.
     await session.commit()
     task_events.notify(str(task_id))
+    events.publish({"type": "tasks"})
 
     # Notify external integrations on failure (best-effort).
     if body.status in (TaskStatus.failed, TaskStatus.timeout, TaskStatus.dead_letter):
