@@ -20,6 +20,9 @@ export function ModeBadge({ mode }: { mode: ExecMode }) {
   if (mode === "unrestricted") {
     return <span className="badge badge--unrestricted">⚠ unrestricted</span>;
   }
+  if (mode === "custom") {
+    return <span className="badge badge--custom">custom</span>;
+  }
   return <span className="badge badge--whitelist">whitelist</span>;
 }
 

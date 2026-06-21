@@ -76,6 +76,12 @@ infrastructure: lock down the hub, use TLS, and keep the audit log.
   worker independently enforces this too: it refuses to run a shell command
   unless it has itself observed unrestricted mode via heartbeat (defense in
   depth, so the hub alone cannot enable shell).
+- **Custom commands** (admin-defined, `custom` exec mode) are also **fixed argv,
+  no shell**. They shift one trust boundary deliberately — an admin can now
+  define which binary+args run on a VM — but are constrained: admin-only +
+  audited to define; double-gated to run (VM in `custom`/`unrestricted` mode AND
+  carrying one of the command's tags); and the worker refuses them outside custom
+  mode, mirroring the unrestricted gate. There is no parameter/shell surface.
 
 ### Transport
 - TLS is enforced for hub↔worker traffic in production (`HUGINN_REQUIRE_TLS`);

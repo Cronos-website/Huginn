@@ -95,6 +95,7 @@ def create_app() -> FastAPI:
     from app.api.routes import (
         audit,
         auth,
+        custom_actions,
         enrollment,
         events,
         execution,
@@ -120,6 +121,7 @@ def create_app() -> FastAPI:
     app.include_router(schedules.router)
     app.include_router(vms.router)
     app.include_router(execution.router)
+    app.include_router(custom_actions.router)
     app.include_router(tasks.router)
     app.include_router(audit.router)
     app.include_router(events.router)

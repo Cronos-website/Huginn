@@ -58,6 +58,7 @@ const NAV = [
   { to: "/access-tokens", label: "MCP Tokens" },
   { to: "/schedules", label: "Schedules", admin: true },
   { to: "/tags", label: "Tags", admin: true },
+  { to: "/commands", label: "Commands", admin: true },
   { to: "/audit", label: "Logs" },
   { to: "/users", label: "Users", admin: true },
   { to: "/account", label: "Account" },

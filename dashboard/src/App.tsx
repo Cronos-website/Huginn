@@ -10,6 +10,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { UsersPage } from "./pages/UsersPage";
 import { AccessTokensPage } from "./pages/AccessTokensPage";
 import { TagsPage } from "./pages/TagsPage";
+import { CustomActionsPage } from "./pages/CustomActionsPage";
 import { SchedulesPage } from "./pages/SchedulesPage";
 import { HomePage } from "./pages/HomePage";
 import { AccountPage } from "./pages/AccountPage";
@@ -46,6 +47,7 @@ export function App() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/tags" element={<TagsPage />} />
+        <Route path="/commands" element={<CustomActionsPage />} />
         <Route path="/schedules" element={<SchedulesPage />} />
         <Route path="/access-tokens" element={<AccessTokensPage />} />
         <Route path="/account" element={<AccountPage />} />

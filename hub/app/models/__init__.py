@@ -1,6 +1,7 @@
 """SQLAlchemy models for the Huginn hub."""
 
 from app.models.audit import AuditLog
+from app.models.custom_action import CustomAction, CustomActionTag
 from app.models.enrollment import EnrollmentToken
 from app.models.enums import (
     ActorType,
@@ -26,6 +27,8 @@ from app.models.webauthn_credential import WebAuthnCredential
 __all__ = [
     "ActorType",
     "AuditLog",
+    "CustomAction",
+    "CustomActionTag",
     "EnrollmentToken",
     "ExecMode",
     "McpToken",

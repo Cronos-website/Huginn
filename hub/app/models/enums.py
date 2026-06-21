@@ -24,8 +24,9 @@ class VMState(enum.StrEnum):
 
 
 class ExecMode(enum.StrEnum):
-    whitelist = "whitelist"
-    unrestricted = "unrestricted"
+    whitelist = "whitelist"  # built-in actions only
+    custom = "custom"  # built-in actions + admin-defined custom commands (no shell)
+    unrestricted = "unrestricted"  # free shell
 
 
 class TaskType(enum.StrEnum):

@@ -12,11 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.core import task_events
-from app.core.actions import validate_action
+from app.core.actions import ACTION_CATALOG, ActionError, validate_action
 from app.models.enums import ExecMode, TaskStatus, TaskType, VMState
 from app.models.mixins import as_aware_utc, utcnow
 from app.models.task import Task
 from app.models.vm import VM
+from app.services import custom_actions as custom_actions_service
 from app.services import versioning
 
 
@@ -75,6 +76,12 @@ async def create_action_task(
     existing = await _find_idempotent(session, vm.id, idempotency_key)
     if existing:
         return existing
+    # A name not in the built-in catalog may be an admin-defined custom command.
+    if action_name not in ACTION_CATALOG:
+        return await _create_custom_action_task(
+            session, vm=vm, action_name=action_name, created_by=created_by,
+            idempotency_key=idempotency_key,
+        )
     # validate_action raises ActionError on unknown action / unsafe params.
     normalized = validate_action(action_name, params)
     # "update_worker" is a named action but is fulfilled as an update task (with
@@ -101,6 +108,42 @@ async def create_action_task(
         payload={
             "action": action_name,
             "params": normalized,
+            "timeout": settings.default_task_timeout_seconds,
+        },
+        status=TaskStatus.pending,
+        created_by=created_by,
+        idempotency_key=idempotency_key,
+    )
+    return await _insert_idempotent(session, task)
+
+
+async def _create_custom_action_task(
+    session: AsyncSession,
+    *,
+    vm: VM,
+    action_name: str,
+    created_by: str,
+    idempotency_key: str | None,
+) -> Task:
+    """Queue an admin-defined custom command, gated on the VM's mode AND tags.
+
+    The fixed argv ships in the task payload; the worker runs it without a shell.
+    """
+    action = await custom_actions_service.get_by_name(session, action_name)
+    if action is None or not action.enabled:
+        raise ActionError(f"unknown action: {action_name!r}")
+    if vm.exec_mode not in (ExecMode.custom, ExecMode.unrestricted):
+        raise ExecForbidden(f"VM must be in 'custom' mode to run {action_name!r}")
+    if not await custom_actions_service.vm_allowed(session, action.id, vm.id):
+        raise ExecForbidden(f"VM's tags are not permitted to run {action_name!r}")
+    settings = get_settings()
+    task = Task(
+        vm_id=vm.id,
+        type=TaskType.action,
+        action_name=action_name,
+        payload={
+            "action": action_name,
+            "argv": list(action.argv),
             "timeout": settings.default_task_timeout_seconds,
         },
         status=TaskStatus.pending,

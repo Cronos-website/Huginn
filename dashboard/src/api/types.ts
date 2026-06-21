@@ -1,5 +1,15 @@
 export type VMState = "pending" | "active" | "offline" | "revoked";
-export type ExecMode = "whitelist" | "unrestricted";
+export type ExecMode = "whitelist" | "custom" | "unrestricted";
+
+export interface CustomAction {
+  id: string;
+  name: string;
+  description: string;
+  argv: string[];
+  enabled: boolean;
+  tag_ids: string[];
+  created_at: string;
+}
 export type UserRole = "admin" | "operator" | "readonly";
 export type TaskStatus =
   | "pending"

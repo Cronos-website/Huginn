@@ -225,6 +225,11 @@ func (a *Agent) dispatch(ctx context.Context, task *hubclient.Task) (hubclient.T
 const maxActionAttempts = 3
 
 func (a *Agent) runAction(ctx context.Context, task *hubclient.Task) hubclient.TaskResult {
+	// A name the worker doesn't know built-in is an admin-defined custom command:
+	// its fixed argv rides in the task payload, gated on the VM's exec mode.
+	if !whitelist.Known(task.ActionName) {
+		return a.runCustom(ctx, task)
+	}
 	argv, err := whitelist.BuildArgv(task.ActionName, stringParams(task.Payload["params"]))
 	if err != nil {
 		return failure(err.Error())
@@ -283,6 +288,25 @@ func (a *Agent) runCommand(ctx context.Context, task *hubclient.Task) hubclient.
 	// Free-command mode is the explicit, hub-gated, audited "unrestricted" path;
 	// using a shell here is intentional. The whitelist path never does this.
 	argv := []string{"sh", "-c", command}
+	res, err := a.Runner.Run(ctx, argv, taskTimeout(task.Payload), 0)
+	if err != nil {
+		return failure(err.Error())
+	}
+	return fromExecResult(res)
+}
+
+// runCustom runs an admin-defined custom command: a fixed argv supplied by the
+// hub in the task payload, executed WITHOUT a shell. Like free commands, the
+// worker independently gates it on having observed 'custom' (or 'unrestricted')
+// exec mode via heartbeat — the hub alone cannot make it run.
+func (a *Agent) runCustom(ctx context.Context, task *hubclient.Task) hubclient.TaskResult {
+	if mode := a.getExecMode(); mode != "custom" && mode != "unrestricted" {
+		return failure("worker refused custom command: custom mode not enabled")
+	}
+	argv := stringSlice(task.Payload["argv"])
+	if len(argv) == 0 {
+		return failure("custom command has no argv")
+	}
 	res, err := a.Runner.Run(ctx, argv, taskTimeout(task.Payload), 0)
 	if err != nil {
 		return failure(err.Error())
@@ -396,6 +420,21 @@ func stringParams(v any) map[string]string {
 			if s, ok := val.(string); ok {
 				out[k] = s
 			}
+		}
+	}
+	return out
+}
+
+// stringSlice extracts a []string from a JSON array payload field (e.g. argv).
+func stringSlice(v any) []string {
+	arr, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, e := range arr {
+		if s, ok := e.(string); ok {
+			out = append(out, s)
 		}
 	}
 	return out

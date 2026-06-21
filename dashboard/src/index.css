@@ -284,6 +284,11 @@ label.lbl {
   background: rgba(109, 179, 242, 0.08);
 }
 
+.badge--custom {
+  color: var(--amber);
+  background: rgba(245, 184, 64, 0.1);
+}
+
 @keyframes pulse {
   0%,
   100% {

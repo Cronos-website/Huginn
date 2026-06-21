@@ -84,6 +84,38 @@ func TestIdempotentActionGivesUpAfterMaxAttempts(t *testing.T) {
 	}
 }
 
+func TestCustomCommandRunsArgvInCustomMode(t *testing.T) {
+	runner := &fakeRunner{result: wexec.Result{ExitCode: 0, Stdout: "ok"}}
+	a := newTestAgent(runner)
+	a.setExecMode("custom")
+	task := &hubclient.Task{ID: "t", Type: "action", ActionName: "restart-nginx",
+		Payload: map[string]any{"argv": []any{"systemctl", "restart", "nginx"}}}
+
+	res := a.runAction(context.Background(), task)
+	if res.Status != "succeeded" {
+		t.Fatalf("status = %q, want succeeded", res.Status)
+	}
+	want := []string{"systemctl", "restart", "nginx"}
+	if strings.Join(runner.gotArgv, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("argv = %v, want %v (and never a shell)", runner.gotArgv, want)
+	}
+}
+
+func TestCustomCommandRefusedOutsideCustomMode(t *testing.T) {
+	runner := &fakeRunner{}
+	a := newTestAgent(runner) // execMode defaults to "" (whitelist)
+	task := &hubclient.Task{ID: "t", Type: "action", ActionName: "restart-nginx",
+		Payload: map[string]any{"argv": []any{"systemctl", "restart", "nginx"}}}
+
+	res := a.runAction(context.Background(), task)
+	if res.Status != "failed" {
+		t.Fatalf("status = %q, want failed", res.Status)
+	}
+	if runner.gotArgv != nil {
+		t.Fatalf("runner must not be invoked when custom mode is off")
+	}
+}
+
 func TestNonIdempotentActionNotRetried(t *testing.T) {
 	runner := &seqRunner{results: []wexec.Result{{ExitCode: 1, Stderr: "boom"}}}
 	a := newTestAgent(runner)

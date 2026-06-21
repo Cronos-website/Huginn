@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-query";
 import { api } from "./client";
 import type {
+  CustomAction,
   AuditEntry,
   AuthConfig,
   EnrollmentToken,
@@ -328,6 +329,49 @@ export function useDeleteTag() {
   const invalidate = useInvalidate(["tags", "vms"]);
   return useMutation({
     mutationFn: (id: string) => api.del<void>(`/api/tags/${id}`),
+    onSuccess: invalidate,
+  });
+}
+
+// --- Custom actions (admin-defined commands) ---
+
+export function useCustomActions() {
+  return useQuery({
+    queryKey: ["custom-actions"],
+    queryFn: () => api.get<CustomAction[]>("/api/actions"),
+  });
+}
+
+type CustomActionInput = {
+  name: string;
+  description: string;
+  argv: string[];
+  tag_ids: string[];
+};
+
+export function useCreateCustomAction() {
+  const invalidate = useInvalidate(["custom-actions"]);
+  return useMutation({
+    mutationFn: (vars: CustomActionInput) => api.post<CustomAction>("/api/actions", vars),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateCustomAction() {
+  const invalidate = useInvalidate(["custom-actions"]);
+  return useMutation({
+    mutationFn: (vars: { id: string } & Partial<Omit<CustomActionInput, "name">> & { enabled?: boolean }) => {
+      const { id, ...body } = vars;
+      return api.patch<CustomAction>(`/api/actions/${id}`, body);
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteCustomAction() {
+  const invalidate = useInvalidate(["custom-actions"]);
+  return useMutation({
+    mutationFn: (id: string) => api.del<void>(`/api/actions/${id}`),
     onSuccess: invalidate,
   });
 }

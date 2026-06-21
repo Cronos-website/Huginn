@@ -7,6 +7,7 @@ import {
   useRevokeVm,
   useRunAction,
   useRunCommand,
+  useCustomActions,
   useSetExecMode,
   useSetVmTags,
   useSettings,
@@ -14,7 +15,7 @@ import {
   useTriggerUpdate,
   useVm,
 } from "../api/hooks";
-import { ACTION_CATALOG, type Task } from "../api/types";
+import { ACTION_CATALOG, type ExecMode, type Task } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { ModeBadge, StateBadge, TagBadge, TaskStatusTag } from "../components/badges";
 import { Modal } from "../components/Dialog";
@@ -67,6 +68,7 @@ export function VMDetailPage() {
   const del = useDeleteVm();
   const navigate = useNavigate();
   const { data: allTags } = useTags();
+  const { data: customActions } = useCustomActions();
   const setVmTags = useSetVmTags();
 
   const [action, setAction] = useState("status");
@@ -88,6 +90,29 @@ export function VMDetailPage() {
 
   const spec = ACTION_CATALOG.find((a) => a.name === action);
   const unrestricted = vm.exec_mode === "unrestricted";
+  // Custom commands available on this VM: enabled, mode allows them, and the VM
+  // carries one of the command's tags (the same gates the hub enforces).
+  const vmTagIds = new Set((vm.tags ?? []).map((t) => t.id));
+  const eligibleCustom =
+    vm.exec_mode === "custom" || vm.exec_mode === "unrestricted"
+      ? (customActions ?? []).filter(
+          (a) => a.enabled && a.tag_ids.some((tid) => vmTagIds.has(tid)),
+        )
+      : [];
+
+  async function setModeTo(mode: ExecMode) {
+    if (mode === vm!.exec_mode) return;
+    if (mode === "unrestricted") {
+      setConfirmMode(true); // keep the explicit confirmation for the free shell
+      return;
+    }
+    try {
+      await setMode.mutateAsync({ id, mode });
+      toast("ok", `exec mode: ${mode}`);
+    } catch {
+      toast("err", "mode change failed");
+    }
+  }
   const stale = vm.worker_version && settings && vm.worker_version !== settings.target_worker_version;
   const isOperator = user?.role === "operator";
   const canActOn = (isAdmin || isOperator) && (vm.state === "active" || vm.state === "offline");
@@ -275,8 +300,22 @@ export function VMDetailPage() {
 
           {/* Actions */}
           <motion.div className="panel panel--bracket" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} style={{ padding: 20 }}>
-            <div className="eyebrow" style={{ marginBottom: 14 }}>
-              whitelisted actions
+            <div className="spread" style={{ marginBottom: 14 }}>
+              <div className="eyebrow">actions</div>
+              {isAdmin && (vm.state === "active" || vm.state === "offline") && (
+                <div className="row" style={{ gap: 4 }} title="exec mode">
+                  {(["whitelist", "custom", "unrestricted"] as ExecMode[]).map((m) => (
+                    <button
+                      key={m}
+                      className={`btn btn--sm ${vm.exec_mode === m ? "btn--primary" : "btn--ghost"}`}
+                      disabled={setMode.isPending}
+                      onClick={() => setModeTo(m)}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             {!canActOn ? (
               <div className="muted tiny">
@@ -291,6 +330,15 @@ export function VMDetailPage() {
                         {a.label}
                       </option>
                     ))}
+                    {eligibleCustom.length > 0 && (
+                      <optgroup label="custom commands">
+                        {eligibleCustom.map((a) => (
+                          <option key={a.id} value={a.name}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                   {spec?.param && (
                     <input
@@ -311,39 +359,28 @@ export function VMDetailPage() {
               </>
             )}
 
-            {/* Unrestricted toggle + free command */}
-            {isAdmin && (vm.state === "active" || vm.state === "offline") && (
+            {/* Free shell — only in unrestricted mode (set via the selector above). */}
+            {isAdmin && unrestricted && (vm.state === "active" || vm.state === "offline") && (
               <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--line)" }}>
-                <div className="spread" style={{ marginBottom: unrestricted ? 14 : 0 }}>
-                  <div>
-                    <div style={{ fontFamily: "var(--font-display)", letterSpacing: "0.08em", fontSize: 13 }}>
-                      UNRESTRICTED SHELL
-                    </div>
-                    <div className="muted tiny">arbitrary command execution · audited</div>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontFamily: "var(--font-display)", letterSpacing: "0.08em", fontSize: 13 }}>
+                    UNRESTRICTED SHELL
                   </div>
-                  <button
-                    className={unrestricted ? "btn btn--danger btn--sm" : "btn btn--sm"}
-                    onClick={() => setConfirmMode(true)}
-                    disabled={setMode.isPending}
-                  >
-                    {unrestricted ? "Disable" : "Enable"}
+                  <div className="muted tiny">arbitrary command execution · audited</div>
+                </div>
+                <div className="row" style={{ gap: 10 }}>
+                  <input
+                    className="field"
+                    style={{ fontFamily: "var(--font-mono)" }}
+                    placeholder="$ command to run…"
+                    value={command}
+                    onChange={(e) => setCommand(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && command && doCommand()}
+                  />
+                  <button className="btn btn--danger" onClick={doCommand} disabled={!command || runCommand.isPending}>
+                    {runCommand.isPending ? <span className="spin" /> : "Exec"}
                   </button>
                 </div>
-                {unrestricted && (
-                  <div className="row" style={{ gap: 10 }}>
-                    <input
-                      className="field"
-                      style={{ fontFamily: "var(--font-mono)" }}
-                      placeholder="$ command to run…"
-                      value={command}
-                      onChange={(e) => setCommand(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && command && doCommand()}
-                    />
-                    <button className="btn btn--danger" onClick={doCommand} disabled={!command || runCommand.isPending}>
-                      {runCommand.isPending ? <span className="spin" /> : "Exec"}
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
