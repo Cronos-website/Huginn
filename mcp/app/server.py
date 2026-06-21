@@ -232,15 +232,46 @@ async def get_vm_status(vm_id: str) -> Any:
     return await _safe(hub.get_vm(target))
 
 
+def _brief_action(a: dict) -> dict:
+    return {"name": a.get("name"), "description": a.get("description"), "argv": a.get("argv")}
+
+
+@mcp.tool()
+async def list_actions(vm_id: str | None = None) -> Any:
+    """List admin-defined custom commands (fixed argv, run in 'custom' exec mode).
+
+    These run via ``execute_action`` like built-in actions. With ``vm_id`` (id or
+    name), returns only the commands runnable on that VM right now — i.e. the VM
+    is in custom/unrestricted mode and carries one of the command's tags.
+    """
+    actions = await _safe(hub.list_actions())
+    if not isinstance(actions, list):
+        return actions
+    enabled = [a for a in actions if a.get("enabled")]
+    if vm_id is None:
+        return [_brief_action(a) for a in enabled]
+    target = await _resolve_vm(vm_id)
+    if isinstance(target, dict):
+        return target
+    vm = await _safe(hub.get_vm(target))
+    if not isinstance(vm, dict):
+        return vm
+    if vm.get("exec_mode") not in ("custom", "unrestricted"):
+        return []  # VM can't run custom commands in its current mode
+    vm_tags = {t.get("id") for t in vm.get("tags", [])}
+    return [_brief_action(a) for a in enabled if set(a.get("tag_ids", [])) & vm_tags]
+
+
 @mcp.tool()
 async def execute_action(
     vm_id: str, action: str, params: dict[str, str] | None = None, wait: bool = False
 ) -> Any:
-    """Run a whitelisted action on a VM (``vm_id`` may be a VM id or its name).
+    """Run an action on a VM (``vm_id`` may be a VM id or its name).
 
-    Allowed actions: status, metrics, restart_service (param: service),
-    list_upgradable_packages, apt_upgrade, update_worker. With ``wait=true`` the
-    call blocks briefly for a result; otherwise it returns a task to poll.
+    Built-in actions: status, metrics, restart_service (param: service),
+    list_upgradable_packages, apt_upgrade, update_worker. Admin-defined custom
+    commands (see ``list_actions``) run the same way by name. With ``wait=true``
+    the call blocks briefly for a result; otherwise it returns a task to poll.
     """
     target = await _resolve_vm(vm_id)
     if isinstance(target, dict):

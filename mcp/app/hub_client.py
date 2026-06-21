@@ -80,6 +80,9 @@ class HubClient:
     async def trigger_update(self, vm_id: str) -> dict:
         return await self._request("POST", f"/api/vms/{vm_id}/update")
 
+    async def list_actions(self) -> list[dict]:
+        return await self._request("GET", "/api/actions")
+
     async def get_task(self, task_id: str) -> dict:
         return await self._request("GET", f"/api/tasks/{task_id}")
 

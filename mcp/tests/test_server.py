@@ -27,7 +27,7 @@ class FakeHub:
 
     async def get_vm(self, vm_id):
         self.calls.append(("get_vm", vm_id))
-        return {"id": vm_id}
+        return {"id": vm_id, "exec_mode": "custom", "tags": [{"id": "tag-web"}]}
 
     async def execute_action(self, vm_id, action, params, wait):
         self.calls.append(("execute_action", vm_id, action))
@@ -43,6 +43,15 @@ class FakeHub:
     async def wait_task(self, task_id, timeout):
         self.calls.append(("wait_task", task_id, timeout))
         return {"id": task_id, "status": "succeeded"}
+
+    async def list_actions(self):
+        self.calls.append(("list_actions",))
+        return [
+            {"name": "restart-nginx", "description": "", "argv": ["systemctl", "restart", "nginx"],
+             "enabled": True, "tag_ids": ["tag-web"]},
+            {"name": "disabled-one", "description": "", "argv": ["true"],
+             "enabled": False, "tag_ids": ["tag-web"]},
+        ]
 
 
 _VM_ID = "11111111-1111-1111-1111-111111111111"
@@ -88,6 +97,34 @@ async def test_vm_tool_unknown_name_errors(monkeypatch) -> None:
     monkeypatch.setattr(server, "hub", FakeHub())
     result = await server.get_vm_status("does-not-exist")
     assert result["error"]["status"] == 404
+
+
+@pytest.mark.asyncio
+async def test_list_actions_excludes_disabled(monkeypatch) -> None:
+    monkeypatch.setattr(server, "hub", FakeHub())
+    result = await server.list_actions()
+    assert [a["name"] for a in result] == ["restart-nginx"]
+    assert result[0]["argv"] == ["systemctl", "restart", "nginx"]
+
+
+@pytest.mark.asyncio
+async def test_list_actions_filtered_to_eligible_vm(monkeypatch) -> None:
+    # VM is in custom mode and carries tag-web → restart-nginx is runnable.
+    monkeypatch.setattr(server, "hub", FakeHub())
+    result = await server.list_actions(_VM_ID)
+    assert [a["name"] for a in result] == ["restart-nginx"]
+
+
+@pytest.mark.asyncio
+async def test_list_actions_empty_when_vm_not_custom(monkeypatch) -> None:
+    fake = FakeHub()
+
+    async def gv(vm_id):
+        return {"id": vm_id, "exec_mode": "whitelist", "tags": [{"id": "tag-web"}]}
+
+    fake.get_vm = gv  # type: ignore[method-assign]
+    monkeypatch.setattr(server, "hub", fake)
+    assert await server.list_actions(_VM_ID) == []
 
 
 @pytest.mark.asyncio

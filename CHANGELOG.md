@@ -14,7 +14,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   VM is in `custom`/`unrestricted` mode AND carries one of the command's tags.
   Argv ships to the worker in the task payload and is executed as a fixed argv
   (no injection surface); the worker independently refuses it outside custom mode.
-  Admin-only CRUD, fully audited. Requires worker ≥ v1.2.0.
+  Admin-only CRUD, fully audited. Requires worker ≥ v1.2.0. Custom commands run
+  via MCP `execute_action` by name like built-ins; the new `list_actions(vm_id?)`
+  MCP tool discovers them (optionally only those runnable on a given VM).
 - **MCP tools accept a VM name or id**: `get_vm_status`, `execute_action`,
   `execute_command`, and `trigger_update` now resolve a VM **name** as well as an
   id, case-insensitively (exact match preferred, then active record; ambiguous

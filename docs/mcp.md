@@ -13,6 +13,7 @@ duplicated, and it never contacts workers directly.
 | `execute_action(vm_id, action, params?, wait?)` | Run a whitelisted action. |
 | `execute_command(vm_id, command, wait?)` | Run a free command (unrestricted VMs only). |
 | `trigger_update(vm_id)` | Update a worker toward the target version. |
+| `list_actions(vm_id?)` | List admin-defined custom commands (optionally only those runnable on a VM). |
 | `get_task(task_id)` | Poll a task's status/result once. |
 | `wait_for_task(task_id, timeout?)` | Block until the task finishes (or timeout) — no poll loop. |
 | `get_audit_log(vm_id?, event_type?, limit?)` | Read audit entries. |
@@ -26,6 +27,11 @@ duplicated, and it never contacts workers directly.
 > `trigger_update`) accept a VM **id or name** (name match is case-insensitive).
 > Prefer the **name** — it's stable across re-enrollment, which mints a new id (a
 > cached id then 404s).
+>
+> **Custom commands** (admin-defined, see the dashboard Commands page) run via
+> `execute_action` by name, exactly like built-ins. Discover them with
+> `list_actions` — pass a `vm_id` to get only those runnable on that VM right now
+> (it must be in `custom`/`unrestricted` mode and carry a matching tag).
 
 ## Authentication model
 
