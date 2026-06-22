@@ -29,6 +29,29 @@
   --shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.8);
 }
 
+/* Light theme — flips the structural neutrals; ember/signal accents stay, with a
+   few deepened for contrast on a light background. Toggled via the header switch
+   (sets <html data-theme="light">). */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --void: #f4f2ec;
+  --void-2: #ece9e0;
+  --panel: #ffffff;
+  --panel-2: #f7f5ef;
+  --line: #ddd9cf;
+  --line-bright: #c9c4b6;
+  --bone: #1b1d21;
+  --dim: #5b616b;
+  --faint: #9a9fa8;
+
+  --ember-glow: rgba(255, 106, 26, 0.22);
+  --signal: #1f9d6b;
+  --amber: #b9791a;
+  --steel: #2f6fb0;
+
+  --shadow: 0 16px 40px -24px rgba(40, 40, 50, 0.35);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

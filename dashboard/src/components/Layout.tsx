@@ -180,6 +180,44 @@ function ProfileMenu({ user, onLogout }: { user: User | null; onLogout: () => vo
   );
 }
 
+function ThemeToggle() {
+  const [theme, setTheme] = useState<string>(
+    () => document.documentElement.dataset.theme || "dark",
+  );
+  const toggle = () => {
+    const next = theme === "light" ? "dark" : "light";
+    document.documentElement.dataset.theme = next;
+    try {
+      localStorage.setItem("huginn.theme", next);
+    } catch {
+      /* ignore */
+    }
+    setTheme(next);
+  };
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
+      aria-label="Toggle light/dark theme"
+      className="row"
+      style={{
+        width: 34,
+        height: 34,
+        justifyContent: "center",
+        background: "transparent",
+        border: "1px solid var(--line-bright)",
+        borderRadius: 999,
+        cursor: "pointer",
+        color: "var(--dim)",
+        fontSize: 15,
+      }}
+    >
+      {theme === "light" ? "☾" : "☀"}
+    </button>
+  );
+}
+
 export function Layout() {
   const { user, logout } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -213,7 +251,10 @@ export function Layout() {
 
           <Telemetry />
 
-          <ProfileMenu user={user} onLogout={logout} />
+          <div className="row" style={{ gap: 10 }}>
+            <ThemeToggle />
+            <ProfileMenu user={user} onLogout={logout} />
+          </div>
         </div>
 
         <nav style={{ maxWidth: 1280, margin: "0 auto", padding: "0 24px" }}>
