@@ -66,9 +66,10 @@ Multiple sign-in methods, all feeding the same admin / operator / read-only RBAC
 
 ```bash
 git clone https://github.com/Sunderrrr/Huginn.git
-cd Huginn
-cp .env.example .env          # then edit secrets
-cd deploy && docker compose up --build
+cd Huginn/deploy 
+cp .env.prod.example .env          # then edit secrets
+vi .env                            # or nano .env
+docker compose up --build
 ```
 
 This starts PostgreSQL, the hub (`:8000`), the dashboard (`:5173`), and the MCP
