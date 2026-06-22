@@ -80,6 +80,32 @@ makes it dev or prod — there is no "mode" flag:
 Each stack reads its **own** env file in `deploy/` (gitignored — copy the
 matching `*.example`): dev → `.env`, prod → `.env.prod`.
 
+### Prerequisites
+
+The hub, MCP, and dashboard build **inside Docker** — you do **not** need Python,
+Node, etc. on the host. Only `build-artifacts.sh` (which cross-compiles the worker
+binaries the hub serves) needs `make` + Go on the host.
+
+```bash
+# Debian / Ubuntu
+sudo apt update
+sudo apt install -y docker.io docker-compose-v2 git make golang-go openssl
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"      # then re-login, so `docker` needs no sudo
+```
+
+| Tool | Needed for |
+|---|---|
+| Docker + the `docker compose` v2 plugin | running every stack |
+| `git` | cloning the repo |
+| `make` + **Go ≥ 1.24** | `build-artifacts.sh` only (worker binaries) |
+| `openssl` | generating secrets (`openssl rand -hex 32`) |
+
+> If your distro's `golang-go` is older than 1.24, install Go from
+> [go.dev/dl](https://go.dev/dl/) — `make release` needs ≥ 1.24. (You can skip
+> Go/`make` entirely if you point workers at prebuilt GitHub-release binaries
+> instead of self-hosting them — see [docs/deployment.md](docs/deployment.md).)
+
 ### Local / dev (Docker)
 
 ```bash
