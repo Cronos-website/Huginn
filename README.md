@@ -62,21 +62,69 @@ Multiple sign-in methods, all feeding the same admin / operator / read-only RBAC
   re-enabled only via an explicit "unsafe" flag — never locking you out when OIDC
   is off. See [docs/auth.md](docs/auth.md).
 
-## Quickstart (local)
+## Deployment
+
+There are **two compose files** in `deploy/`, and *which one you run* is what
+makes it dev or prod — there is no "mode" flag:
+
+| Stack | Command (run from `deploy/`) | What you get |
+|---|---|---|
+| **Local / dev** | `docker compose up --build` | ports exposed directly — hub `:8000`, dashboard `:5173`, MCP `:9000`. **No Caddy, no TLS.** |
+| **Production** | `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build` | **Caddy** in front, **HTTPS** on 80/443, everything under one domain. |
+| **Kubernetes** | `kubectl apply -f deploy/k8s/…` (see below) | hub / MCP / dashboard + migration Job + ingress. |
+
+> ⚠️ A plain `docker compose up` (no `-f`) always uses the default
+> `docker-compose.yml` → the **dev** stack (direct ports, no Caddy). For
+> production you **must** pass `-f docker-compose.prod.yml --env-file .env.prod`.
+
+Each stack reads its **own** env file in `deploy/` (gitignored — copy the
+matching `*.example`): dev → `.env`, prod → `.env.prod`.
+
+### Local / dev (Docker)
 
 ```bash
 git clone https://github.com/Sunderrrr/Huginn.git
-cd Huginn/deploy 
-cp .env.prod.example .env          # then edit secrets
-vi .env                            # or nano .env
+cd Huginn/deploy
+cp .env.example .env          # dev template — then edit the secrets
 docker compose up --build
 ```
 
-This starts PostgreSQL, the hub (`:8000`), the dashboard (`:5173`), and the MCP
-server (`:9000`). A first admin user is bootstrapped from
-`HUGINN_BOOTSTRAP_ADMIN_*`; log in to the dashboard with those credentials.
+Starts PostgreSQL, the hub (`:8000`), the dashboard (`:5173`), and the MCP server
+(`:9000`). A first admin is bootstrapped from `HUGINN_BOOTSTRAP_ADMIN_*`; log in
+to the dashboard at `http://localhost:5173`.
 
-Enroll a VM (after generating an enrollment token via the API/dashboard):
+### Production (Docker + Caddy + automatic HTTPS)
+
+```bash
+cd Huginn/deploy
+cp .env.prod.example .env.prod        # set HUGINN_DOMAIN + real secrets (openssl rand -hex 32)
+./build-artifacts.sh v1.3.0           # build the worker binaries the hub serves at /dist
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+```
+
+Only Caddy publishes ports (80/443); the dashboard, `/api`, and `/mcp` share one
+origin. Open `https://<HUGINN_DOMAIN>/` and sign in (accept the one-time
+self-signed-cert warning if you used an IP/LAN with `HUGINN_TLS_INTERNAL=internal`).
+
+### Kubernetes
+
+```bash
+kubectl create namespace huginn
+kubectl -n huginn apply -f deploy/k8s/secret.example.yaml    # edit real secrets first
+kubectl -n huginn apply -f deploy/k8s/migrate-job.yaml       # DB migrations (run on every upgrade)
+kubectl -n huginn apply -f deploy/k8s/hub-deployment.yaml -f deploy/k8s/hub-service.yaml \
+  -f deploy/k8s/mcp-deployment.yaml -f deploy/k8s/dashboard-deployment.yaml
+kubectl -n huginn apply -f deploy/k8s/ingress.example.yaml   # edit host/issuer first
+```
+
+Assumes an **external PostgreSQL** (set in the `huginn-secrets` Secret).
+
+Full details, TLS options, and a production checklist:
+**[docs/deployment.md](docs/deployment.md)**.
+
+### Enroll a VM
+
+After generating an enrollment token (dashboard → Fleet → Add VM, or the API):
 
 ```bash
 curl -fsSL https://<hub>/install.sh | HUB_URL=https://<hub> TOKEN=<token> bash
@@ -86,10 +134,6 @@ curl -fsSL https://<hub>/install.sh | HUB_URL=https://<hub> TOKEN=<token> bash
 The hub serves `install.sh` and the worker binaries itself, so this works without
 a GitHub release. The VM appears as **PENDING**; approve it before it can receive
 any command.
-
-For production you can choose **Docker Compose + Caddy** (single host, automatic
-HTTPS) or **Kubernetes** — both are first-class; you don't need k8s. See
-[docs/deployment.md](docs/deployment.md).
 
 See [docs/](docs/) for [architecture](docs/architecture.md),
 [authentication & 2FA](docs/auth.md), [enrollment](docs/enrollment.md),

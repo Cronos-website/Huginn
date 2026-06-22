@@ -11,6 +11,11 @@ Pick the path that fits your scale:
 The Docker and Kubernetes paths are first-class alternatives — you do **not** need
 Kubernetes to run Huginn in production.
 
+> **dev vs prod is just which compose file you run.** A plain `docker compose up`
+> uses the default `docker-compose.yml` (dev — direct ports, no Caddy). Production
+> requires `-f docker-compose.prod.yml --env-file .env.prod`. Each reads its own
+> env file in `deploy/`: dev → `.env`, prod → `.env.prod`.
+
 ## Local (docker-compose)
 
 ```bash
@@ -32,7 +37,7 @@ publishes ports (80/443).
 ```bash
 cd deploy
 cp .env.prod.example .env.prod        # set HUGINN_DOMAIN + real secrets
-./build-artifacts.sh v1.0.0           # build worker binaries the hub will serve
+./build-artifacts.sh v1.3.0           # build worker binaries the hub will serve
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 ```
 
