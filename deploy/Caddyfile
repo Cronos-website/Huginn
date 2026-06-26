@@ -12,8 +12,11 @@
 	default_sni {$HUGINN_DOMAIN}
 }
 
-{$HUGINN_DOMAIN} {
-	tls {$HUGINN_TLS_INTERNAL:internal}
+{$HUGINN_DOMAIN}, huginn.cronos.lan {
+	# Cert issued by the internal Cronos Root CA (Vault pki/cronos-lan), valid for
+	# huginn.cronos.lan + IP 172.16.2.5. Replaces the self-signed `internal` cert
+	# so clients trusting the Cronos root (incl. Node/Claude Code) connect cleanly.
+	tls /etc/caddy/certs/huginn.crt /etc/caddy/certs/huginn.key
 	encode gzip
 
 	# Security headers on every response.

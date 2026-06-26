@@ -42,3 +42,7 @@ worker-identity.json
 
 # Built worker artifacts served by prod Caddy
 deploy/artifacts/
+
+# TLS cert/key mounted into Caddy (issued by the internal Cronos CA) + config backups
+deploy/certs/
+deploy/*.bak-*
