@@ -141,9 +141,8 @@ claude mcp add huginn \
 
 HTTP:
 ```bash
-claude mcp add huginn \
-  --transport http \
-  --url https://your-host/mcp \
+claude mcp add --transport http \
+  huginn https://your-host/mcp \
   --header "Authorization: Bearer <your-mcp-token>"
 ```
 

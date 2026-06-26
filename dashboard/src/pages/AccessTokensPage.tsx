@@ -27,10 +27,11 @@ function buildConfig(client: ClientId, url: string, token: string): string {
   const auth = `Bearer ${token}`;
   switch (client) {
     case "claude-code":
+      // The name and URL are positional args (there is no --url flag); options
+      // come first, then `<name> <url>`.
       return [
-        "claude mcp add huginn \\",
-        "  --transport http \\",
-        `  --url ${url} \\`,
+        "claude mcp add --transport http \\",
+        `  huginn ${url} \\`,
         `  --header "Authorization: ${auth}"`,
       ].join("\n");
     case "continue":
