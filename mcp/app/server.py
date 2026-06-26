@@ -38,12 +38,32 @@ settings = get_settings()
 # reliably reaches the tool's hub call. A long-lived session task would instead
 # capture the token from session-creation time and reuse it for every later
 # request — attributing all calls to whoever opened the session.
+_INSTRUCTIONS = """\
+Huginn — fleet control. How to use these tools as designed:
+
+1. Start with list_vms(brief=true) for a compact roster (id, name, state, mode).
+   Target a VM by name or id (name is case-sensitive).
+2. Act with execute_action (built-ins: status, metrics, restart_service{service},
+   list_upgradable_packages, apt_upgrade, update_worker; plus admin custom commands
+   — discover them with list_actions(vm_id)). execute_command (free shell) works
+   ONLY on a VM in 'unrestricted' mode. If an action is refused, check the mode
+   with get_vm_status.
+3. Waiting on a task — IMPORTANT: do NOT poll get_task in a loop. Either pass
+   wait=true to execute_action/execute_command to get the result inline, or, after
+   launching with wait=false, call wait_for_task(task_id) ONCE — it blocks
+   server-side and returns the instant the worker reports a result. Only if it
+   returns still-running (timeout) should you call wait_for_task again. get_task is
+   for a single one-off status check, not for busy-waiting.
+4. Every action is audited and attributed to your user. Stay within scope.
+"""
+
 mcp = FastMCP(
     "Huginn",
     host=settings.host,
     port=settings.port,
     stateless_http=True,
     json_response=True,
+    instructions=_INSTRUCTIONS,
 )
 hub = HubClient(settings)
 
@@ -275,7 +295,9 @@ async def execute_action(
     Built-in actions: status, metrics, restart_service (param: service),
     list_upgradable_packages, apt_upgrade, update_worker. Admin-defined custom
     commands (see ``list_actions``) run the same way by name. With ``wait=true``
-    the call blocks briefly for a result; otherwise it returns a task to poll.
+    the call blocks briefly and returns the result inline (prefer this for short
+    actions). Otherwise it returns a task — then call wait_for_task(task_id) once;
+    do NOT poll get_task in a loop.
     """
     target = await _resolve_vm(vm_id)
     if isinstance(target, dict):
@@ -289,7 +311,8 @@ async def execute_command(vm_id: str, command: str, wait: bool = False) -> Any:
 
     Only permitted when the VM is in 'unrestricted' mode (enabled by an admin in
     the dashboard). Subject to the same auth, rate-limit, and audit rules as the
-    dashboard.
+    dashboard. With ``wait=true`` the result is returned inline; otherwise call
+    wait_for_task(task_id) once — do NOT poll get_task in a loop.
     """
     target = await _resolve_vm(vm_id)
     if isinstance(target, dict):
@@ -311,7 +334,11 @@ async def trigger_update(vm_id: str) -> Any:
 
 @mcp.tool()
 async def get_task(task_id: str) -> Any:
-    """Poll a previously-created task by id for its status and result."""
+    """Fetch a task's current status/result ONCE (a single snapshot).
+
+    To await a still-running task, use wait_for_task(task_id) instead of calling
+    this repeatedly — looping on get_task busy-waits and wastes calls.
+    """
     return await _safe(hub.get_task(task_id))
 
 

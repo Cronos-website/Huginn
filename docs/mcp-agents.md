@@ -300,20 +300,26 @@ Once connected, the agent has access to these tools:
 
 | Tool | Description |
 |---|---|
-| `list_vms(state?)` | List fleet VMs, optionally by state |
+| `list_vms(state?, brief?)` | List fleet VMs, optionally by state (`brief` = compact roster) |
 | `get_vm_status(vm_id)` | Full VM status (state, mode, version, heartbeat) |
-| `execute_action(vm_id, action, params?, wait?)` | Run a whitelisted action |
+| `list_actions(vm_id?)` | List admin-defined custom commands (runnable on a VM with `vm_id`) |
+| `execute_action(vm_id, action, params?, wait?)` | Run a built-in or custom action |
 | `execute_command(vm_id, command, wait?)` | Free shell command (unrestricted VMs only) |
 | `trigger_update(vm_id)` | Trigger worker self-update |
 | `get_task(task_id)` | Poll task status and result once |
 | `wait_for_task(task_id, timeout?)` | Block until the task finishes (or timeout) — avoids a poll loop |
 | `get_audit_log(vm_id?, event_type?, limit?)` | Read audit entries |
 
-> **Long tasks:** after launching an action/command with `wait=false`, call
-> `wait_for_task(task_id)` — it returns the moment the worker reports a result
-> (event-driven server-side, no busy polling). If it's still running when the
-> timeout elapses, the current state is returned; just call again to keep waiting.
-> Use `list_vms(brief=true)` for a compact roster (id, name, state, mode).
+> **Long tasks — don't poll `get_task` in a loop.** Either pass `wait=true` to
+> `execute_action`/`execute_command` to get the result inline, or after launching
+> with `wait=false` call `wait_for_task(task_id)` **once** — it blocks server-side
+> (event-driven, no busy polling) and returns the instant the worker reports a
+> result. Only call it again if it returned still-running at the timeout.
+> `get_task` is a single one-off status check, not a busy-wait. Use
+> `list_vms(brief=true)` for a compact roster (id, name, state, mode).
+>
+> The MCP server also ships these usage rules as connection `instructions`, so a
+> compliant client surfaces them to the model automatically.
 
 ### Whitelisted actions
 
